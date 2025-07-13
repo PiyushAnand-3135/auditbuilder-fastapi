@@ -135,6 +135,10 @@ class ISO9001Stage1Audit(BaseModel):
 
 # ---------- ROUTE ----------
 
+@app.get("/test")
+async def test():
+    return {"message": "hello"}
+
 @app.post("/iso9001/stage1/submit")
 async def submit_iso9001_stage1(audit: ISO9001Stage1Audit):
     # Step 1: Render DOCX with original data
