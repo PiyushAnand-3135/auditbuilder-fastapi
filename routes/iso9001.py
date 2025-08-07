@@ -1,0 +1,8360 @@
+from fastapi import APIRouter
+from fastapi import FastAPI, Response, Request
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, EmailStr
+from typing import List, Optional
+from docxtpl import DocxTemplate
+from docx import Document
+import io
+import json
+import math
+import random
+import httpx
+import re
+import traceback
+from fastapi.responses import JSONResponse
+from fastapi.responses import StreamingResponse
+import ast
+import zipfile
+import asyncio
+
+router = APIRouter()
+
+def ensure_list_of_dicts(text: str) -> list[dict]:
+    """
+    Attempt to extract a JSON list of dictionaries from the input text.
+    Cleans up common LLM artifacts like code fences, markdown, and invalid characters.
+    """
+
+    # Step 1: Remove markdown-style code fences like ```json ... ```
+    cleaned_text = text.strip()
+    cleaned_text = re.sub(r"^```(?:json)?\s*|```$", "", cleaned_text, flags=re.MULTILINE).strip()
+
+    # Step 2: Extract JSON array from within larger text (if exists)
+    json_array_match = re.search(r"(\[.*?\])", cleaned_text, re.DOTALL)
+    if json_array_match:
+        cleaned_text = json_array_match.group(1)
+
+    # Step 3: Remove dangerous control characters (nulls, tabs, etc)
+    cleaned_text = re.sub(r"[\x00-\x1F\x7F]", "", cleaned_text)
+
+    # Step 4: Try to parse JSON
+    try:
+        data = json.loads(cleaned_text)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"❌ Failed to parse JSON from Mistral response: {e}\nResponse text was:\n{cleaned_text[:500]}")
+
+    # Step 5: Validate structure
+    if not isinstance(data, list) or not all(isinstance(item, dict) for item in data):
+        raise ValueError("❌ Parsed content is not a list of dictionaries")
+
+    return data
+
+def patch_docx_buffer_with_na_stage2(docx_buffer, new_evidence_dict):
+    """
+    Patches the EVIDENCE column for requirement rows in the main ISO9001 Stage2 table,
+    using 'carry forward' clause-no logic and updating only rows matching keys in new_evidence_dict.
+
+    new_evidence_dict: dict of keys (e.g. '4.1 - -Has the ...') to values.
+
+    ONLY requirement rows (those starting with '-') are updated.
+    """
+    from docx import Document
+
+    docx_buffer.seek(0)
+    doc = Document(docx_buffer)
+    for table in doc.tables:
+        # Confirm table header
+        header = [cell.text.strip().upper().replace(' ', '') for cell in table.rows[0].cells]
+        if "CLAUSENO." in header and "REQUIREMENTS" in header and "EVIDENCE" in header:
+            cl_no_idx = header.index("CLAUSENO.")
+            req_idx = header.index("REQUIREMENTS")
+            evid_idx = header.index("EVIDENCE")
+            last_clause = None
+            # Patch only requirement rows
+            for row in table.rows[1:]:
+                cells = row.cells
+                if len(cells) < max(cl_no_idx, req_idx, evid_idx) + 1:
+                    continue
+                cl_no = cells[cl_no_idx].text.strip()
+                req   = cells[req_idx].text.strip()
+                if cl_no:  # update carry-forward clause number
+                    last_clause = cl_no
+                # Patch only if requirement starts with '-' (matches extractor & filtered_extracted_data)
+                if not req.lstrip().startswith("-"):
+                    continue
+                key = f"{last_clause} - {req}"
+                if key in new_evidence_dict:
+                    cells[evid_idx].text = new_evidence_dict[key]
+            break
+    docx_buffer.seek(0)
+    docx_buffer.truncate(0)
+    doc.save(docx_buffer)
+    docx_buffer.seek(0)
+
+def extract_iso9001_stage2_action_rows(docx_path_or_stream):
+    """
+    Extracts actionable requirements rows from a Word table (your ISO 9001 audit sheet),
+    robust to merged/blank cell weirdness. Each row will include the actual C/NC/O status.
+    """
+    from docx import Document
+
+    doc = Document(docx_path_or_stream)
+    rows = []
+    for table in doc.tables:
+        # Map column index to header, normalized
+        header = [cell.text.strip().upper().replace(' ', '') for cell in table.rows[0].cells]
+        header_map = {}
+        for idx, h in enumerate(header):
+            if h.startswith("CLAUSENO."):
+                header_map["clause_no"] = idx
+            elif h.startswith("REQUIREMENTS"):
+                header_map["requirements"] = idx
+            elif h.startswith("EVIDENCE"):
+                header_map["evidence"] = idx
+            elif "C/N" in h or "CNC" in h or "C/NC/O" in h or ("C" in h and "O" in h):
+                header_map["c/nc/o"] = idx
+
+        if not set(['clause_no','requirements','c/nc/o','evidence']) <= set(header_map):
+            continue  # skip to next table: header missing
+
+        last_clause = ""
+        for row in table.rows[1:]:
+            row_cells = [cell.text.strip() for cell in row.cells]
+            # Defensive: skip empty/very short rows
+            if sum(bool(x) for x in row_cells) < 2: continue
+
+            # Map cells to logical field, using header order
+            d = {}
+            for k, idx in header_map.items():
+                # defensively handle short rows (word merges)
+                d[k] = row.cells[idx].text.strip() if idx < len(row.cells) else ""
+
+            # Carry forward clause number if blank
+            if d["clause_no"]:
+                last_clause = d["clause_no"]
+            d["clause_no"] = last_clause
+
+            # Only actionable requirement lines (dashes, or questions)
+            if d["requirements"] and (d["requirements"].lstrip().startswith('-') or '?' in d["requirements"]):
+                rows.append({
+                    'clause_no': d["clause_no"],
+                    'requirements': d["requirements"],
+                    'c/nc/o': d["c/nc/o"],
+                    'evidence': d["evidence"],
+                })
+        if rows:
+            break  # Only extract from first matching table
+    return rows
+
+def update_cnc_placeholders_stage2(rows):
+    """
+    Fill empty 'c/nc/o' fields with C, NC, and O in 80:10:10 ratio,
+    skipping rows where evidence is 'NA'.
+    """
+    indices_to_fill = [
+        idx for idx, row in enumerate(rows)
+        if not row.get("c/nc/o", "").strip() and row.get("evidence", "").strip().upper() != "NA"
+    ]
+
+    total = len(indices_to_fill)
+    if total == 0:
+        return rows
+
+    nc_count = min(2, max(1, math.floor(0.1 * total)))
+    o_count = max(1, math.ceil(0.1 * total))
+    c_count = total - nc_count - o_count
+
+    replacements = (["     C"] * c_count) + (["     NC"] * nc_count) + (["     O"] * o_count)
+    random.shuffle(replacements)
+
+    for i, idx in enumerate(indices_to_fill):
+        rows[idx]["c/nc/o"] = replacements[i]
+
+    # Clear for 'NA' evidence
+    for row in rows:
+        if row.get("evidence", "").strip().upper() == "NA":
+            row["c/nc/o"] = ""
+
+    return rows
+
+def patch_docx_by_row_index_stage2(docx_buffer, audit_rows, table_idx=5, data_start_idx=1):
+    """
+    Only patches action rows (i.e., where the 'requirements' cell value starts with '-' or contains '?')
+    Leaves non-action rows (headers, merged rows, clause section titles) unchanged.
+    """
+    from docx import Document
+    docx_buffer.seek(0)
+    doc = Document(docx_buffer)
+    table = doc.tables[table_idx]
+    audit_idx = 0
+    for i, trow in enumerate(table.rows[data_start_idx:], start=data_start_idx):
+        # Defensive: skip if not enough cells
+        if len(trow.cells) < 4:
+            continue
+        req_cell_text = trow.cells[1].text.strip()
+        # Only patch actionable requirements lines (same as extract logic)
+        if req_cell_text and (req_cell_text.lstrip().startswith("-") or "?" in req_cell_text):
+            if audit_idx >= len(audit_rows):
+                break  # no more rows to patch
+            arow = audit_rows[audit_idx]
+            # PATCH THE CELLS BELOW (preserves formatting for 'section' rows!)
+            col_keys = ["clause_no", "requirements", "c/nc/o", "evidence"]
+            for col, key in enumerate(col_keys):
+                value = str(arow.get(key, ""))
+                cell = trow.cells[col]
+                if cell.paragraphs:
+                    cell.paragraphs[0].text = value
+                else:
+                    cell.text = value
+            audit_idx += 1
+        else:
+            # Do not patch this row—likely a clause heading or merged/title row
+            pass
+    docx_buffer.seek(0)
+    docx_buffer.truncate(0)
+    doc.save(docx_buffer)
+    docx_buffer.seek(0)
+    return docx_buffer
+
+def split_into_batches(data, batch_size=5):
+    return [data[i:i + batch_size] for i in range(0, len(data), batch_size)]
+
+def generate_prompt_for_stage2(batch, audit, clause_map, prompt_table_md, pattern_desc):
+    # Use clause_map dict here for Stage 2 prompt extraction
+    stage2_prompts = []
+    for clause, docs in clause_map.items():
+        for doc in docs:
+            if "Stage 2 Prompt" in doc and doc["Stage 2 Prompt"]:
+                stage2_prompts.append(f"Clause {clause}: {doc['Stage 2 Prompt']}")
+    stage2_prompt_text = "\n".join(stage2_prompts)
+
+    attendance_list_text = "\n".join([f"- {member}" for member in audit.attendanceSheet])
+
+    # Then use prompt_table_md (the markdown string) for embedding in prompt
+    return f"""
+    You are an ISO 9001 Stage 2 audit reporting assistant.
+
+    Use the following document numbering format throughout the report:  
+    **Pattern**: {pattern_desc}  
+    When mentioning any document as evidence, use its name and number from the table below.  
+    If a document number has a prefix like "XXX" or "BLPL", replace it with the initials of the organization's name
+    (e.g., "Inzinc Consulting LLC" → "ICL-IMS-F-01"). If initials are unclear, use the first letter of each word.
+
+    {prompt_table_md}
+
+    --- 
+
+    Here are detailed prompts for each clause to guide your evidence generation:
+    {stage2_prompt_text}
+
+    --- 
+
+    ### Audit Details:
+    - Organization: {audit.organizationName}
+    - Scope: {audit.scope}
+    - Address: {audit.address}
+    - Stage 2 Audit Dates: {audit.startDateOfAuditStage2} to {audit.endDateOfAuditStage2}
+    - Stage 1 Audit Dates: {audit.startDateOfAuditStage1} to {audit.endDateOfAuditStage1}
+
+    ### Attendance Sheet:
+    Below is the list of personnel present during the audit. Use these names accurately while writing evidence. Assign roles like CEO, QA Manager, etc., from this list.
+
+    {attendance_list_text}
+
+    --- 
+
+    ### Instructions for Report Writing:
+    - You are to ONLY update the 'evidence' field of each item in the input list.
+    - DO NOT change or remove any keys like 'clause_no', 'requirements', 'c/nc/o'.
+    - If the "C/NC/O" value is "C", rephrase the "Document Verification detail with statement of Conformity" as a professional positive confirmation. 
+    - If the "C/NC/O" value is "NC", rephrase as a documented nonconformity, stating what is nonconforming and referencing the relevant document(s) for that clause.
+    - If the "C/NC/O" value is "O", rephrase as a neutral observation, mentioning the relevant document(s) for that clause from the table.
+    - Do NOT alter the order of the items or reformat any field other than 'evidence'.
+    - Every item is a dictionary. Keep it exactly as-is, modifying only the 'evidence'.
+    - For entries where the 'requirements' field includes multiple questions, you **must** provide a detailed, structured response addressing each question, in the same order.
+    - Add one empty line between each answer for clarity and readability.
+    - Responses should reflect ISO 9001 Stage 2 audit standards. Be specific, reference documents and roles by name, and include real evidence examples.
+    - If any clause contains refence documents, add a random date in the range of 7-10 months from the stage 1 audit.
+
+    --- 
+
+    ### Input:
+    Here is the list of clauses and requirements. Again, do NOT change the structure—just generate appropriate 'evidence' content.
+
+    {json.dumps(batch, indent=2, ensure_ascii=False)}
+
+    --- 
+
+    ### Output:
+    Respond ONLY with the list of dictionaries with updated 'evidence' fields.  
+    Do not add markdown, commentary, or explanations.  
+    Ensure each answer is separated by one line (\\n\\n) for clarity.
+    """
+
+def choose_document_pattern_stage2(forced_pattern_name=None):
+    """
+    Randomly select one document-numbering pattern for ISO audit document references.
+    Returns:
+        pattern_name: 'ims_org', 'ims_only', 'qhse', or 'minimal'
+        pattern_description: human-readable summary
+        clause_map: dict mapping clause -> list of dicts with 'Document Name', 'Document Number'
+        prompt_table: Markdown table as string for prompt
+    """
+    # --- Pattern definitions (expand for all clauses as needed) ---
+    # Pattern 1: Org initials + IMS, e.g. XXX-IMS-F-01
+    pattern_1 = {
+        "4.1": [
+            {
+                "Document Name": "Integrated Management System Manual",
+                "Document Number": "XXX-IMS-MAN-01",
+                "Guidance/Description": "Describes the organization's integrated management system and its context.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide evidence (meeting records, management review, implementation plans) that context of the organization is identified and considered in operational activities. Show how external and internal issues are reviewed and acted on."
+                )
+            },
+            {
+                "Document Name": "SWOT Analysis",
+                "Document Number": "XXX-IMS-F-01",
+                "Guidance/Description": "Identifies strengths, weaknesses, opportunities, and threats.",
+                "Document Owner": "Process Owner",
+                "Approved By": "Top Management",
+                "Stage 2 Prompt": (
+                    "Provide a completed SWOT analysis form and describe how results influence actions, with a concrete example of a weakness or opportunity addressed."
+                )
+            },
+            {
+                "Document Name": "Context of Organization",
+                "Document Number": "XXX-IMS-F-02",
+                "Guidance/Description": "Defines external and internal issues relevant to organizational purpose and QMS.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show the documented issues and explain, with examples, where any of these have prompted operational or policy changes."
+                )
+            },
+        ],
+        "4.2": [
+            {
+                "Document Name": "Procedure for Determining Context and Interested Parties",
+                "Document Number": "XXX-IMS-P-01",
+                "Guidance/Description": "Process for identifying interested parties and their relevant needs and expectations.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Describe and show evidence that the organization has identified all relevant interested parties and determined their needs and expectations. List at least 4-5 actual interested parties (e.g., customers, regulators, staff, suppliers, contractors) and specific expectations for each. Show how this information is integrated into your management system."
+                )
+            },
+            {
+                "Document Name": "List of Interested Parties",
+                "Document Number": "XXX-IMS-F-03",
+                "Guidance/Description": "Lists internal and external interested parties with their needs.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current interested parties list, and for 4-5 entries, show evidence that their expectations are tracked and acted on, such as communications, meeting minutes, or actions taken."
+                )
+            }
+        ],
+        "4.3": [
+            {
+                "Document Name": "Scope of the Quality management system",
+                "Document Number": "General Description",
+                "Guidance/Description": "Defines the boundaries and applicability of the management system.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide the documented scope and give real examples showing what is included and excluded; e.g., reference specific departments, locations, or processes."
+                )
+            }
+        ],
+        "4.4": [
+            {
+                "Document Name": "Process Interaction Chart",
+                "Document Number": "XXX-IMS-PIC-01",
+                "Guidance/Description": "A diagram showing process interactions and interfaces.",
+                "Document Owner": "Process Owner",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show the process map/chart and explain with evidence (e.g., training records, cross-functional meetings) how these interactions are communicated and implemented."
+                )
+            },
+            {
+                "Document Name": "List of All procedures",
+                "Document Number": "XXX-IMS-F-04",
+                "Guidance/Description": "Comprehensive inventory of all active management system procedures.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current version of the procedures list and a tracked change showing a recent update or addition."
+                )
+            }
+        ],
+        "5.1": [
+            {
+                "Document Name": "Leadership-general",
+                "Document Number": "General Description",
+                "Guidance/Description": "Describes top management’s leadership approach in the QMS.",
+                "Document Owner": "Managing Director",
+                "Approved By": "Board",
+                "Stage 2 Prompt": (
+                    "Give examples of leadership in action (e.g., signed policies, management review participation, communication records) showing how top management demonstrates commitment."
+                )
+            },
+            {
+                "Document Name": "Customer Focus",
+                "Document Number": "XXX-POL-02",
+                "Guidance/Description": "Policy for customer focus, satisfaction, and requirements.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide evidence (customer feedback reviews, complaint logs, actions taken) that customer focus is implemented and monitored."
+                )
+            },
+        ],
+        "5.2": [
+            {
+                "Document Name": "Quality, Environment, Health & Safety Policy",
+                "Document Number": "XXX-POL-02",
+                "Guidance/Description": "Signed and communicated QHSE policy document.",
+                "Document Owner": "Managing Director",
+                "Approved By": "Board",
+                "Stage 2 Prompt": (
+                    "Provide the current signed QHSE policy; show evidence of how it is communicated and understood at relevant functions and levels."
+                )
+            }
+        ],
+        "5.3": [
+            {
+                "Document Name": "Procedure for Roles, Responsibilities & Authorities",
+                "Document Number": "XXX-IMS-P-02",
+                "Guidance/Description": "Defines functional roles, responsibilities, authorities.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide responsibility matrix or job descriptions and show evidence they are followed (e.g. signed documents, role-based process assignments)."
+                )
+            }
+        ],
+        "5.4": [
+            {
+                "Document Name": "Procedure for Consultation and participation of Workers",
+                "Document Number": "XXX-IMS-P-03",
+                "Guidance/Description": "Process for involving employees in decisions affecting QHSE.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Present meeting minutes, suggestion system outputs, or other records showing worker involvement in QMS/EMS/OHSMS activities."
+                )
+            }
+        ],
+        "6.1.1": [
+            {
+                "Document Name": "Procedure for Addressing Risk and Opportunity",
+                "Document Number": "XXX-IMS-P-04",
+                "Guidance/Description": "Documents risk and opportunity assessment and handling.",
+                "Document Owner": "Risk Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show risk register(s) and evidence that risks/opportunities are regularly identified, assessed, and acted on (e.g., risk reviews, controls implemented)."
+                )
+            },
+            {
+                "Document Name": "Registry of Key Risks & opportunities",
+                "Document Number": "XXX-IMS-F-08",
+                "Guidance/Description": "Record of identified risks and opportunities.",
+                "Document Owner": "Risk Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current registry and examples of actions taken on identified risks/opportunities."
+                )
+            },
+        ],
+        "6.1.2": [
+            {
+                "Document Name": "Procedure for Environmental Impact Assessment",
+                "Document Number": "XXX-IMS-P-05",
+                "Guidance/Description": "How to identify and manage environmental aspects and impacts.",
+                "Document Owner": "EHS Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide a completed impact assessment, and show how significant impacts are managed in your daily/operational practices."
+                )
+            },
+            {
+                "Document Name": "Procedure for Hazard Identification",
+                "Document Number": "XXX-IMS-P-06",
+                "Guidance/Description": "Process for hazard identification and risk evaluation.",
+                "Document Owner": "Safety Officer",
+                "Approved By": "EHS Manager",
+                "Stage 2 Prompt": (
+                    "Show a record of identified hazards and evidence of implemented controls or corrective actions."
+                )
+            },
+            {
+                "Document Name": "Record of Environmental Aspect and Impact Analysis",
+                "Document Number": "XXX-IMS-F-09",
+                "Guidance/Description": "Filled record of aspects and impact analyses.",
+                "Document Owner": "EHS Manager",
+                "Approved By": "Top Management",
+                "Stage 2 Prompt": (
+                    "Show the current filled record and evidence that it's regularly reviewed and updated."
+                )
+            },
+            {
+                "Document Name": "Records of Hazard Analysis and Risk Treatement",
+                "Document Number": "XXX-IMS-F-10",
+                "Guidance/Description": "Actual hazard analysis and risk treatment records.",
+                "Document Owner": "Safety Officer",
+                "Approved By": "EHS Manager",
+                "Stage 2 Prompt": (
+                    "Present completed forms with evidence of actions taken as a result (e.g. mitigation implemented)."
+                )
+            }
+        ],
+        "6.1.3": [
+            {
+                "Document Name": "Procedure for identification for legal requirements",
+                "Document Number": "XXX-IMS-P-07",
+                "Guidance/Description": "Process to identify, access and comply with legal/other requirements.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show the process for legal requirement identification, and current legal register. Give an example of recent new/changed requirement tracked and acted on."
+                )
+            },
+            {
+                "Document Name": "List of all legal documents and legal requirements",
+                "Document Number": "XXX-IMS-F-11",
+                "Guidance/Description": "Register of legal/other compliance requirements.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide an up-to-date legal register and show evidence of ongoing review/updates."
+                )
+            }
+        ],
+        "6.2": [
+            {
+                "Document Name": "Quality & HSE Objectives, Quality & HSE objective monitoring sheets, Results of the Quality Objectives",
+                "Document Number": "XXX-IMS-OBJ-01",
+                "Guidance/Description": "Records QHSE objectives, plans, performance indicators.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide current QHSE objectives, records of performance vs objectives, and evidence of action when objectives are not achieved."
+                )
+            },
+            {
+                "Document Name": "Objective Monitoring Action Plan and Results of Monitored Data",
+                "Document Number": "XXX-IMS-F-12",
+                "Guidance/Description": "Filled records of objective monitoring/action plans.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Top Management",
+                "Stage 2 Prompt": (
+                    "Show filled action plans and monitoring records, and describe a real corrective action triggered following a missed target."
+                )
+            }
+        ],
+        "7.1": [
+            {
+                "Document Name": "List of Machinery, List of Computers, List of Assets, List of equipments",
+                "Document Number": "XXX-IMS-F-13",
+                "Guidance/Description": "Inventory of major assets and machinery.",
+                "Document Owner": "Asset Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current asset list and evidence it's maintained and updated regularly; provide an example of how maintenance is scheduled using the list."
+                )
+            },
+            {
+                "Document Name": "Annual maintainance plan and calibration plan for machines and equipments",
+                "Document Number": "XXX-IMS-F-42",
+                "Guidance/Description": "Schedules and records for maintenance/calibration.",
+                "Document Owner": "Maintenance Supervisor",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Show this year's plan and proof that maintenance and calibration are performed as scheduled (e.g., completed checklists, certificates)."
+                )
+            }
+        ],
+        "7.2": [
+            {
+                "Document Name": "Procedure for Training & Competenacy",
+                "Document Number": "XXX-IMS-P-08",
+                "Guidance/Description": "How to manage and verify employee competency.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show training and competence procedure and evidence (training records, competence evaluations) that personnel are competent for roles assigned."
+                )
+            },
+            {
+                "Document Name": "Competence Matrix",
+                "Document Number": "XXX-IMS-F-14",
+                "Guidance/Description": "Matrix of staff roles, competencies, qualification status.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show the current competence matrix and evidence that gaps are tracked and closed with actual data from the past year."
+                )
+            },
+            {
+                "Document Name": "Annual training Calendar",
+                "Document Number": "XXX-IMS-F-15",
+                "Guidance/Description": "Planned training events for the year.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide recent annual training plan and proof of completed sessions."
+                )
+            },
+            {
+                "Document Name": "Effecetiveness of Training Provided",
+                "Document Number": "XXX-IMS-F-16",
+                "Guidance/Description": "Evaluation of training effectiveness.",
+                "Document Owner": "Training Coordinator",
+                "Approved By": "HR Manager",
+                "Stage 2 Prompt": (
+                    "Present completed effectiveness evaluations and corrective actions taken if training outcomes were not met."
+                )
+            },
+            {
+                "Document Name": "Annual Training Records",
+                "Document Number": "XXX-IMS-F-17",
+                "Guidance/Description": "Records of all training carried out in the year.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show signed training attendance records and certificates for at least 4 different trainings."
+                )
+            },
+            {
+                "Document Name": "Competence Evaluation",
+                "Document Number": "XXX-IMS-F-18",
+                "Guidance/Description": "Evaluation records for individual competence.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "HR Manager",
+                "Stage 2 Prompt": (
+                    "Submit actual filled-in evaluation forms and show how incompetence is identified and corrected."
+                )
+            }
+        ],
+        "7.3": [
+            {
+                "Document Name": "Integrated Management System Manual",
+                "Document Number": "XXX-IMS-MAN-01",
+                "Guidance/Description": "Manual describing the organization's IMS.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show physical/digital copies of the manual and evidence that staff have access and reference it in work."
+                )
+            }
+        ],
+        "7.4": [
+            {
+                "Document Name": "Integrated Management System Manual",
+                "Document Number": "XXX-IMS-MAN-01",
+                "Guidance/Description": "Manual includes communication procedures.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Explain how communication requirements from the manual are followed in practice; provide communications sent using the guidance."
+                )
+            },
+            {
+                "Document Name": "Procedure for Internal and External Communication",
+                "Document Number": "XXX-IMS-P-09",
+                "Guidance/Description": "How the organization manages its internal/external communications.",
+                "Document Owner": "Communications Coordinator",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show an example of actual internal and external communication regarding QMS (e.g. safety alerts, customer letters)."
+                )
+            }
+        ],
+        "7.5": [
+            {
+                "Document Name": "Procedure for Document and Record Control",
+                "Document Number": "XXX-IMS-P-09",
+                "Guidance/Description": "Document control process explained.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show a controlled document with revision history, and evidence that obsolete versions are removed from use."
+                )
+            },
+            {
+                "Document Name": "Master List of Documents",
+                "Document Number": "XXX-IMS-F-04",
+                "Guidance/Description": "List of all controlled documents.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current master list, mark controlled/uncontrolled copies, and show an example of a document recently added or revised."
+                )
+            },
+            {
+                "Document Name": "List of External Origin Documents",
+                "Document Number": "XXX-IMS-F-19",
+                "Guidance/Description": "Documents controlled that come from outside the organization.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide examples showing external documents tracked and updated—e.g., a regulation update tracked in the system."
+                )
+            },
+            {
+                "Document Name": "Documents Change Request Form",
+                "Document Number": "XXX-IMS-F-20",
+                "Guidance/Description": "Form for requesting changes to documents.",
+                "Document Owner": "All Staff",
+                "Approved By": "Document Control Coordinator",
+                "Stage 2 Prompt": (
+                    "Provide one completed change request form and show how requests are logged and tracked."
+                )
+            }
+        ],
+        "8.1": [
+            {
+                "Document Name": "Master List of Operational Procedures",
+                "Document Number": "XXX-IMS-F-04",
+                "Guidance/Description": "Write a prompt to list of core operation procedures as per the scope.",
+                "Document Owner": "",
+                # Not directly specified; usually Operations Manager or Process Owner – fill as per your org chart
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "List all core operational procedures maintained under the IMS, as per your organization's scope. Show how these procedures are controlled and regularly reviewed."
+                )
+            },
+            {
+                "Document Name": "Change management Form",
+                "Document Number": "XXX-IMS-F-21",
+                "Guidance/Description": "Change management documentation related to operational processes.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show completed change management forms reflecting changes in any operational procedure or process over the last year."
+                )
+            },
+            {
+                "Document Name": "Records of Hazard Analysis and Risk Treatement",
+                "Document Number": "XXX-IMS-F-10",
+                "Guidance/Description": "Write a prompt about the hazard analysis and risk treatment identified for each operational procedure.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Provide filled records of hazard analysis and risk treatment performed for major operational activities. Give an example illustrating how results from these records led to implemented controls."
+                )
+            }
+        ],
+        "8.2": [
+            {
+                "Document Name": "Master List of Operational Procedures",
+                "Document Number": "XXX-IMS-F-04",
+                "Guidance/Description": "Write a prompt to list of core operation procedures as per the scope.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show the master list of operational procedures with reference to customer requirements. Provide a sample showing the trace from customer requirements to documented procedures."
+                )
+            },
+            {
+                "Document Name": "Procedure for Emergency Preparedness",
+                "Document Number": "XXX-IMS-P-10",
+                "Guidance/Description": "Write a prompt that emergency evacuation plan verified and found evident.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show your current emergency preparedness procedure. Provide evidence (e.g., evacuation drill records) that the plan is tested and known by staff."
+                )
+            }
+        ],
+        "8.3": [
+            {
+                "Document Name": "Procedure for Identification of Design Input & Output of the product and services",
+                "Document Number": "XXX-IMS-P-11",
+                "Guidance/Description": "Write a prompt that design & development prompt verified (create a sample of any product or service delivered to any client as per the scope).",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show a sample of design & development documentation for a product or service as per your organization’s scope. Include input/output records and version control."
+                )
+            },
+            {
+                "Document Name": "Design Review and Approval Sheet",
+                "Document Number": "XXX-IMS-F-22",
+                "Guidance/Description": "Write a prompt that design review and approval verified (create a sample of any product or service delivered to any client as per the scope).",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Provide a completed design review and approval sheet for a recent project, showing signatures/approvals and identified issues."
+                )
+            },
+            {
+                "Document Name": "Design Progess Sheet",
+                "Document Number": "XXX-IMS-F-23",
+                "Guidance/Description": "Write a prompt that design process flow verified (create a sample of any product or service delivered to any client as per the scope).",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Present a filled-in design process flow/progress sheet documenting key stages, milestones, and change management actions for a selected design project."
+                )
+            }
+        ],
+        "8.4": [
+            {
+                "Document Name": "Procedure for Selection & Evaluation of Vendors",
+                "Document Number": "XXX-IMS-P-12",
+                "Guidance/Description": "Describes selection, approval, and evaluation of suppliers.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide supplier evaluation records showing at least two vendors evaluated with outcomes. Include criteria used for assessment and ongoing monitoring actions."
+                )
+            },
+            {
+                "Document Name": "Procedure for Purchasing Management",
+                "Document Number": "XXX-IMS-P-13",
+                "Guidance/Description": "Defines the purchasing process and controls.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show sample purchase orders and evidence of implementation of purchasing procedures, including approval and verification steps."
+                )
+            },
+            {
+                "Document Name": "Vendor and Sub Contractor Registration Form",
+                "Document Number": "XXX-IMS-F-24",
+                "Guidance/Description": "Form used for registering new vendors/subcontractors.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide a completed registration form for a sample supplier, noting evaluation and approval process."
+                )
+            },
+            {
+                "Document Name": "List of Approved Vendors and Sub Contractors",
+                "Document Number": "XXX-IMS-F-25",
+                "Guidance/Description": "Current list of all approved suppliers and subcontractors.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the list with at least two example suppliers, including approval status and date of last evaluation."
+                )
+            },
+            {
+                "Document Name": "Vendor Registration Form",
+                "Document Number": "XXX-IMS-F-26",
+                "Guidance/Description": "Form evidencing vendor registration and approval.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show a completed and signed registration form for a vendor from the current year."
+                )
+            }
+        ],
+        "8.5.1": [
+            {
+                "Document Name": "Procedure for Service/Production/Contract",
+                "Document Number": "XXX-IMS-P-14",
+                "Guidance/Description": "Describes service, production, and contract controls.",
+                "Document Owner": "Operations Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide records (job cards, work instructions, service records) showing controls during product or service provision for a sample client."
+                )
+            },
+            {
+                "Document Name": "HSE work Instructions",
+                "Document Number": "XXX-IMS-F-27",
+                "Guidance/Description": "Work instructions addressing health, safety, and environment.",
+                "Document Owner": "HSE Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Present completed HSE inspection checklists or records, including a recent random safety inspection outcome."
+                )
+            }
+        ],
+        "8.5.2": [
+            {
+                "Document Name": "Procedure for Document and Record Control",
+                "Document Number": "XXX-IMS-P-14",
+                "Guidance/Description": "Defines controls for document identification and traceability.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show examples (logs, tags, digital tracking) of how documents or products are identified and traced throughout service or production."
+                )
+            },
+            {
+                "Document Name": "Change Management Form",
+                "Document Number": "XXX-IMS-F-28",
+                "Guidance/Description": "Form to log and authorize changes to production/service.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide a completed form for a recent change in production or service, detailing the traceability process."
+                )
+            },
+            {
+                "Document Name": "Master List of Documents",
+                "Document Number": "XXX-IMS-F-04",
+                "Guidance/Description": "Master index of all documents for traceability.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show how the master list supports document traceability, with an annotated example."
+                )
+            },
+            {
+                "Document Name": "Documents Change Request Form",
+                "Document Number": "XXX-IMS-F-21",
+                "Guidance/Description": "Request form for document changes affecting traceability.",
+                "Document Owner": "All Staff",
+                "Approved By": "Document Control Coordinator",
+                "Stage 2 Prompt": (
+                    "Show a sample of this form including traceability notes and resolution for one recent request."
+                )
+            }
+        ],
+        "8.5.3": [
+            {
+                "Document Name": "List of Item Received",
+                "Document Number": "XXX-IMS-F-29",
+                "Guidance/Description": "Log of customer or external provider property received.",
+                "Document Owner": "Warehouse Supervisor",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show a filled form evidencing the receipt and safeguarding of property from a customer or supplier."
+                )
+            }
+        ],
+        "8.5.4": [
+            {
+                "Document Name": "Preservation",
+                "Document Number": "General Description",
+                "Guidance/Description": "Describes measures for preservation of product through production/service lifecycle.",
+                "Document Owner": "Operations Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Explain methods for preserving product/service conformity (packaging, storage, labeling), and give an example from a recent job."
+                )
+            }
+        ],
+        "8.5.5": [
+            {
+                "Document Name": "Customer Feedback Analysis Report",
+                "Document Number": "XXX-IMS-F-30",
+                "Guidance/Description": "Reports on customer feedback and post-delivery activities.",
+                "Document Owner": "Customer Service Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Show a recent customer feedback report, delivery note, or post-delivery survey analysis with a completed action."
+                )
+            }
+        ],
+        "8.5.6": [
+            {
+                "Document Name": "Procedure for Change Management",
+                "Document Number": "XXX-IMS-P-15",
+                "Guidance/Description": "Describes the process for managing changes affecting product/service.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide a sample record of a product/service change from initial request to implementation for one project/client."
+                )
+            },
+            {
+                "Document Name": "Documents Change Request Form",
+                "Document Number": "XXX-IMS-F-21",
+                "Guidance/Description": "Form for logging changes as part of the change management process.",
+                "Document Owner": "All Staff",
+                "Approved By": "Document Control Coordinator",
+                "Stage 2 Prompt": (
+                    "Show a completed change request relating to a service/product delivered, including status and approvals."
+                )
+            }
+        ],
+        "8.6": [
+            {
+                "Document Name": "Final Inspection Report",
+                "Document Number": "XXX-IMS-F-30",
+                "Guidance/Description": "Final inspection record for product/service before release.",
+                "Document Owner": "Quality Inspector",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show at least one signed final inspection report for a product or service delivered to a client relevant to your scope."
+                )
+            }
+        ],
+        "8.7": [
+            {
+                "Document Name": "Procedure for Management of Non-Conformities and Corrective Actions",
+                "Document Number": "XXX-IMS-P-16",
+                "Guidance/Description": "Procedure to identify, control, and correct nonconforming outputs.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide records/log for 2-3 nonconforming outputs, including actions taken and follow-up verification."
+                )
+            },
+            {
+                "Document Name": "Registry and Status Nonconformities and Corrective Actions",
+                "Document Number": "XXX-IMS-F-31",
+                "Guidance/Description": "Log/register of nonconformities, corrections, and status.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Show the registry for the last year with two sample entries, their closure or current status, including evidence for action."
+                )
+            }
+        ],
+        "9.1": [
+            {
+                "Document Name": "Procedure for Monitoring & Measurement",
+                "Document Number": "XXX-IMS-P-17",
+                "Guidance/Description": "Defines how IMS performance is measured, analyzed, and evaluated.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show monitoring/measurement plan, filled records, and summaries/results for the last quarter."
+                )
+            }
+        ],
+        "9.1.1": [
+            {
+                "Document Name": "Procedure for Compliance Management",
+                "Document Number": "XXX-IMS-P-18",
+                "Guidance/Description": "Procedure for evaluation and management of compliance obligations.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide compliance monitoring records, audits, or status reports showing periodic review."
+                )
+            }
+        ],
+        "9.1.2": [
+            {
+                "Document Name": "Procedure for Identification for Legal Requirements",
+                "Document Number": "XXX-IMS-P-19",
+                "Guidance/Description": "Describes how legal and other requirements are identified and complied with.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show a recent update or review record for legal requirements, with one example of a regulatory change tracked and addressed."
+                )
+            },
+            {
+                "Document Name": "List of all legal documents and legal requirements",
+                "Document Number": "XXX-IMS-F-11",
+                "Guidance/Description": "Up-to-date register of all relevant legal requirements.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide a copy of the legal register and highlight the learning/action taken on a new requirement in the last 6 months."
+                )
+            }
+        ],
+        "9.1.3": [
+            {
+                "Document Name": "Data Analysis Record",
+                "Document Number": "XXX-IMS-F-03",
+                "Guidance/Description": "Record and analysis/results of monitored data for continual improvement.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show a sample analysis record and explain the actions decided based on this data analysis."
+                )
+            }
+        ],
+        "9.2": [
+            {
+                "Document Name": "Procedure for Internal Audit",
+                "Document Number": "XXX-IMS-F-04",
+                "Guidance/Description": "Describes how internal audits are planned, conducted, and followed up.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide the last two internal audit reports, including audit program and corrections for non-conformities identified."
+                )
+            },
+            {
+                "Document Name": "Internal Audit Program",
+                "Document Number": "XXX-IMS-F-32",
+                "Guidance/Description": "Schedule/calendar of planned internal audits.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current annual audit program including areas covered and assigned auditors."
+                )
+            },
+            {
+                "Document Name": "Internal Audit Schedule",
+                "Document Number": "XXX-IMS-F-33",
+                "Guidance/Description": "Detailed audit timetable and auditor assignments.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show the detailed schedule and confirmation/audit notifications sent."
+                )
+            },
+            {
+                "Document Name": "Internal Audit Report",
+                "Document Number": "XXX-IMS-F-34",
+                "Guidance/Description": "Completed report with findings, recommendations, and corrective action.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide a recent audit report, and summarize 2-3 nonconformities found, including their closure status and responsible persons."
+                )
+            }
+        ],
+        "9.3": [
+            {
+                "Document Name": "Procedure for Management Review",
+                "Document Number": "XXX-IMS-P-20",
+                "Guidance/Description": "Defines the management review process and requirements.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show management review schedule, agenda, and minutes for the most recent meeting, including actions and persons responsible."
+                )
+            },
+            {
+                "Document Name": "Management Review Minutes",
+                "Document Number": "XXX-IMS-F-35",
+                "Guidance/Description": "Signed minutes from management review meetings.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide the last approved minutes and highlight key outputs, decisions, and assigned actions."
+                )
+            }
+        ],
+        "10.2": [
+            {
+                "Document Name": "Procedure for Management of Non-Conformities and Corrective Actions",
+                "Document Number": "XXX-IMS-P-21",
+                "Guidance/Description": "Details how non-conformities are corrected and actions tracked.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide evidence of at least two corrective actions still in progress, along with their status, owner, and planned closure date."
+                )
+            },
+            {
+                "Document Name": "Registry and Status Nonconformities and Corrective Actions",
+                "Document Number": "XXX-IMS-F-36",
+                "Guidance/Description": "Register/log showing status of all non-conformities and corrective actions.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show registry with status updates and details for at least two nonconformities (open and closed)."
+                )
+            },
+            {
+                "Document Name": "Non Conformity Report",
+                "Document Number": "XXX-IMS-F-37",
+                "Guidance/Description": "Detailed report evidencing closure and verification for each nonconformity.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide a sample nonconformity closure report, including root cause, corrections, actions, and verification."
+                )
+            }
+        ],
+        "10.3": [
+            {
+                "Document Name": "Management Review Minutes",
+                "Document Number": "XXX-IMS-F-35",
+                "Guidance/Description": "Signed minutes, including continual improvement review and actions.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show evidence that continual improvement is reviewed and driven through management review (e.g., improvement actions and tracking)."
+                )
+            },
+            {
+                "Document Name": "Non Conformity Report",
+                "Document Number": "XXX-IMS-F-37",
+                "Guidance/Description": "Evidence that continual improvement is achieved through corrective actions.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Submit an example where a nonconformity or suggestion led to a documented improvement of the management system or process."
+                )
+            }
+        ]
+        # ...expand for remaining clauses as needed...
+    }
+
+    # Pattern 2: IMS only (IMS-...)
+    pattern_2 = {
+        "4.1": [
+            {
+                "Document Name": "Integrated Management System Manual",
+                "Document Number": "IMS-MAN-01",
+                "Guidance/Description": "Describes the organization's integrated management system and its context.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide evidence (meeting records, management review, implementation plans) that context of the organization is identified and considered in operational activities. Show how external and internal issues are reviewed and acted on."
+                )
+            },
+            {
+                "Document Name": "SWOT Analysis",
+                "Document Number": "IMS-F-01",
+                "Guidance/Description": "Identifies strengths, weaknesses, opportunities, and threats.",
+                "Document Owner": "Process Owner",
+                "Approved By": "Top Management",
+                "Stage 2 Prompt": (
+                    "Provide a completed SWOT analysis form and describe how results influence actions, with a concrete example of a weakness or opportunity addressed."
+                )
+            },
+            {
+                "Document Name": "Context of Organization",
+                "Document Number": "IMS-F-02",
+                "Guidance/Description": "Defines external and internal issues relevant to organizational purpose and QMS.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show the documented issues and explain, with examples, where any of these have prompted operational or policy changes."
+                )
+            },
+        ],
+        "4.2": [
+            {
+                "Document Name": "Procedure for Determining Context and Interested Parties",
+                "Document Number": "IMS-P-01",
+                "Guidance/Description": "Process for identifying interested parties and their relevant needs and expectations.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Describe and show evidence that the organization has identified all relevant interested parties and determined their needs and expectations. List at least 4-5 actual interested parties (e.g., customers, regulators, staff, suppliers, contractors) and specific expectations for each. Show how this information is integrated into your management system."
+                )
+            },
+            {
+                "Document Name": "List of Interested Parties",
+                "Document Number": "IMS-F-03",
+                "Guidance/Description": "Lists internal and external interested parties with their needs.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current interested parties list, and for 4-5 entries, show evidence that their expectations are tracked and acted on, such as communications, meeting minutes, or actions taken."
+                )
+            }
+        ],
+        "4.3": [
+            {
+                "Document Name": "Scope of the Quality management system",
+                "Document Number": "General Description",
+                "Guidance/Description": "Defines the boundaries and applicability of the management system.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide the documented scope and give real examples showing what is included and excluded; e.g., reference specific departments, locations, or processes."
+                )
+            }
+        ],
+        "4.4": [
+            {
+                "Document Name": "Process Interaction Chart",
+                "Document Number": "IMS-PIC-01",
+                "Guidance/Description": "A diagram showing process interactions and interfaces.",
+                "Document Owner": "Process Owner",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show the process map/chart and explain with evidence (e.g., training records, cross-functional meetings) how these interactions are communicated and implemented."
+                )
+            },
+            {
+                "Document Name": "List of All procedures",
+                "Document Number": "IMS-F-04",
+                "Guidance/Description": "Comprehensive inventory of all active management system procedures.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current version of the procedures list and a tracked change showing a recent update or addition."
+                )
+            }
+        ],
+        "5.1": [
+            {
+                "Document Name": "Leadership-general",
+                "Document Number": "General Description",
+                "Guidance/Description": "Describes top management’s leadership approach in the QMS.",
+                "Document Owner": "Managing Director",
+                "Approved By": "Board",
+                "Stage 2 Prompt": (
+                    "Give examples of leadership in action (e.g., signed policies, management review participation, communication records) showing how top management demonstrates commitment."
+                )
+            },
+            {
+                "Document Name": "Customer Focus",
+                "Document Number": "POL-02",
+                "Guidance/Description": "Policy for customer focus, satisfaction, and requirements.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide evidence (customer feedback reviews, complaint logs, actions taken) that customer focus is implemented and monitored."
+                )
+            },
+        ],
+        "5.2": [
+            {
+                "Document Name": "Quality, Environment, Health & Safety Policy",
+                "Document Number": "POL-02",
+                "Guidance/Description": "Signed and communicated QHSE policy document.",
+                "Document Owner": "Managing Director",
+                "Approved By": "Board",
+                "Stage 2 Prompt": (
+                    "Provide the current signed QHSE policy; show evidence of how it is communicated and understood at relevant functions and levels."
+                )
+            }
+        ],
+        "5.3": [
+            {
+                "Document Name": "Procedure for Roles, Responsibilities & Authorities",
+                "Document Number": "IMS-P-02",
+                "Guidance/Description": "Defines functional roles, responsibilities, authorities.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide responsibility matrix or job descriptions and show evidence they are followed (e.g. signed documents, role-based process assignments)."
+                )
+            }
+        ],
+        "5.4": [
+            {
+                "Document Name": "Procedure for Consultation and participation of Workers",
+                "Document Number": "IMS-P-03",
+                "Guidance/Description": "Process for involving employees in decisions affecting QHSE.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Present meeting minutes, suggestion system outputs, or other records showing worker involvement in QMS/EMS/OHSMS activities."
+                )
+            }
+        ],
+        "6.1.1": [
+            {
+                "Document Name": "Procedure for Addressing Risk and Opportunity",
+                "Document Number": "IMS-P-04",
+                "Guidance/Description": "Documents risk and opportunity assessment and handling.",
+                "Document Owner": "Risk Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show risk register(s) and evidence that risks/opportunities are regularly identified, assessed, and acted on (e.g., risk reviews, controls implemented)."
+                )
+            },
+            {
+                "Document Name": "Registry of Key Risks & opportunities",
+                "Document Number": "IMS-F-08",
+                "Guidance/Description": "Record of identified risks and opportunities.",
+                "Document Owner": "Risk Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current registry and examples of actions taken on identified risks/opportunities."
+                )
+            },
+        ],
+        "6.1.2": [
+            {
+                "Document Name": "Procedure for Environmental Impact Assessment",
+                "Document Number": "IMS-P-05",
+                "Guidance/Description": "How to identify and manage environmental aspects and impacts.",
+                "Document Owner": "EHS Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide a completed impact assessment, and show how significant impacts are managed in your daily/operational practices."
+                )
+            },
+            {
+                "Document Name": "Procedure for Hazard Identification",
+                "Document Number": "IMS-P-06",
+                "Guidance/Description": "Process for hazard identification and risk evaluation.",
+                "Document Owner": "Safety Officer",
+                "Approved By": "EHS Manager",
+                "Stage 2 Prompt": (
+                    "Show a record of identified hazards and evidence of implemented controls or corrective actions."
+                )
+            },
+            {
+                "Document Name": "Record of Environmental Aspect and Impact Analysis",
+                "Document Number": "IMS-F-09",
+                "Guidance/Description": "Filled record of aspects and impact analyses.",
+                "Document Owner": "EHS Manager",
+                "Approved By": "Top Management",
+                "Stage 2 Prompt": (
+                    "Show the current filled record and evidence that it's regularly reviewed and updated."
+                )
+            },
+            {
+                "Document Name": "Records of Hazard Analysis and Risk Treatement",
+                "Document Number": "IMS-F-10",
+                "Guidance/Description": "Actual hazard analysis and risk treatment records.",
+                "Document Owner": "Safety Officer",
+                "Approved By": "EHS Manager",
+                "Stage 2 Prompt": (
+                    "Present completed forms with evidence of actions taken as a result (e.g. mitigation implemented)."
+                )
+            }
+        ],
+        "6.1.3": [
+            {
+                "Document Name": "Procedure for identification for legal requirements",
+                "Document Number": "IMS-P-07",
+                "Guidance/Description": "Process to identify, access and comply with legal/other requirements.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show the process for legal requirement identification, and current legal register. Give an example of recent new/changed requirement tracked and acted on."
+                )
+            },
+            {
+                "Document Name": "List of all legal documents and legal requirements",
+                "Document Number": "IMS-F-11",
+                "Guidance/Description": "Register of legal/other compliance requirements.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide an up-to-date legal register and show evidence of ongoing review/updates."
+                )
+            }
+        ],
+        "6.2": [
+            {
+                "Document Name": "Quality & HSE Objectives, Quality & HSE objective monitoring sheets, Results of the Quality Objectives",
+                "Document Number": "IMS-OBJ-01",
+                "Guidance/Description": "Records QHSE objectives, plans, performance indicators.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide current QHSE objectives, records of performance vs objectives, and evidence of action when objectives are not achieved."
+                )
+            },
+            {
+                "Document Name": "Objective Monitoring Action Plan and Results of Monitored Data",
+                "Document Number": "IMS-F-12",
+                "Guidance/Description": "Filled records of objective monitoring/action plans.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Top Management",
+                "Stage 2 Prompt": (
+                    "Show filled action plans and monitoring records, and describe a real corrective action triggered following a missed target."
+                )
+            }
+        ],
+        "7.1": [
+            {
+                "Document Name": "List of Machinery, List of Computers, List of Assets, List of equipments",
+                "Document Number": "IMS-F-13",
+                "Guidance/Description": "Inventory of major assets and machinery.",
+                "Document Owner": "Asset Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current asset list and evidence it's maintained and updated regularly; provide an example of how maintenance is scheduled using the list."
+                )
+            },
+            {
+                "Document Name": "Annual maintainance plan and calibration plan for machines and equipments",
+                "Document Number": "IMS-F-42",
+                "Guidance/Description": "Schedules and records for maintenance/calibration.",
+                "Document Owner": "Maintenance Supervisor",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Show this year's plan and proof that maintenance and calibration are performed as scheduled (e.g., completed checklists, certificates)."
+                )
+            }
+        ],
+        "7.2": [
+            {
+                "Document Name": "Procedure for Training & Competenacy",
+                "Document Number": "IMS-P-08",
+                "Guidance/Description": "How to manage and verify employee competency.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show training and competence procedure and evidence (training records, competence evaluations) that personnel are competent for roles assigned."
+                )
+            },
+            {
+                "Document Name": "Competence Matrix",
+                "Document Number": "IMS-F-14",
+                "Guidance/Description": "Matrix of staff roles, competencies, qualification status.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show the current competence matrix and evidence that gaps are tracked and closed with actual data from the past year."
+                )
+            },
+            {
+                "Document Name": "Annual training Calendar",
+                "Document Number": "IMS-F-15",
+                "Guidance/Description": "Planned training events for the year.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide recent annual training plan and proof of completed sessions."
+                )
+            },
+            {
+                "Document Name": "Effecetiveness of Training Provided",
+                "Document Number": "IMS-F-16",
+                "Guidance/Description": "Evaluation of training effectiveness.",
+                "Document Owner": "Training Coordinator",
+                "Approved By": "HR Manager",
+                "Stage 2 Prompt": (
+                    "Present completed effectiveness evaluations and corrective actions taken if training outcomes were not met."
+                )
+            },
+            {
+                "Document Name": "Annual Training Records",
+                "Document Number": "IMS-F-17",
+                "Guidance/Description": "Records of all training carried out in the year.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show signed training attendance records and certificates for at least 4 different trainings."
+                )
+            },
+            {
+                "Document Name": "Competence Evaluation",
+                "Document Number": "IMS-F-18",
+                "Guidance/Description": "Evaluation records for individual competence.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "HR Manager",
+                "Stage 2 Prompt": (
+                    "Submit actual filled-in evaluation forms and show how incompetence is identified and corrected."
+                )
+            }
+        ],
+        "7.3": [
+            {
+                "Document Name": "Integrated Management System Manual",
+                "Document Number": "IMS-MAN-01",
+                "Guidance/Description": "Manual describing the organization's IMS.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show physical/digital copies of the manual and evidence that staff have access and reference it in work."
+                )
+            }
+        ],
+        "7.4": [
+            {
+                "Document Name": "Integrated Management System Manual",
+                "Document Number": "IMS-MAN-01",
+                "Guidance/Description": "Manual includes communication procedures.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Explain how communication requirements from the manual are followed in practice; provide communications sent using the guidance."
+                )
+            },
+            {
+                "Document Name": "Procedure for Internal and External Communication",
+                "Document Number": "IMS-P-09",
+                "Guidance/Description": "How the organization manages its internal/external communications.",
+                "Document Owner": "Communications Coordinator",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show an example of actual internal and external communication regarding QMS (e.g. safety alerts, customer letters)."
+                )
+            }
+        ],
+        "7.5": [
+            {
+                "Document Name": "Procedure for Document and Record Control",
+                "Document Number": "IMS-P-09",
+                "Guidance/Description": "Document control process explained.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show a controlled document with revision history, and evidence that obsolete versions are removed from use."
+                )
+            },
+            {
+                "Document Name": "Master List of Documents",
+                "Document Number": "IMS-F-04",
+                "Guidance/Description": "List of all controlled documents.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current master list, mark controlled/uncontrolled copies, and show an example of a document recently added or revised."
+                )
+            },
+            {
+                "Document Name": "List of External Origin Documents",
+                "Document Number": "IMS-F-19",
+                "Guidance/Description": "Documents controlled that come from outside the organization.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide examples showing external documents tracked and updated—e.g., a regulation update tracked in the system."
+                )
+            },
+            {
+                "Document Name": "Documents Change Request Form",
+                "Document Number": "IMS-F-20",
+                "Guidance/Description": "Form for requesting changes to documents.",
+                "Document Owner": "All Staff",
+                "Approved By": "Document Control Coordinator",
+                "Stage 2 Prompt": (
+                    "Provide one completed change request form and show how requests are logged and tracked."
+                )
+            }
+        ],
+        "8.1": [
+            {
+                "Document Name": "Master List of Operational Procedures",
+                "Document Number": "IMS-F-04",
+                "Guidance/Description": "Write a prompt to list of core operation procedures as per the scope.",
+                "Document Owner": "",
+                # Not directly specified; usually Operations Manager or Process Owner – fill as per your org chart
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "List all core operational procedures maintained under the IMS, as per your organization's scope. Show how these procedures are controlled and regularly reviewed."
+                )
+            },
+            {
+                "Document Name": "Change management Form",
+                "Document Number": "IMS-F-21",
+                "Guidance/Description": "Change management documentation related to operational processes.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show completed change management forms reflecting changes in any operational procedure or process over the last year."
+                )
+            },
+            {
+                "Document Name": "Records of Hazard Analysis and Risk Treatement",
+                "Document Number": "IMS-F-10",
+                "Guidance/Description": "Write a prompt about the hazard analysis and risk treatment identified for each operational procedure.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Provide filled records of hazard analysis and risk treatment performed for major operational activities. Give an example illustrating how results from these records led to implemented controls."
+                )
+            }
+        ],
+        "8.2": [
+            {
+                "Document Name": "Master List of Operational Procedures",
+                "Document Number": "IMS-F-04",
+                "Guidance/Description": "Write a prompt to list of core operation procedures as per the scope.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show the master list of operational procedures with reference to customer requirements. Provide a sample showing the trace from customer requirements to documented procedures."
+                )
+            },
+            {
+                "Document Name": "Procedure for Emergency Preparedness",
+                "Document Number": "IMS-P-10",
+                "Guidance/Description": "Write a prompt that emergency evacuation plan verified and found evident.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show your current emergency preparedness procedure. Provide evidence (e.g., evacuation drill records) that the plan is tested and known by staff."
+                )
+            }
+        ],
+        "8.3": [
+            {
+                "Document Name": "Procedure for Identification of Design Input & Output of the product and services",
+                "Document Number": "IMS-P-11",
+                "Guidance/Description": "Write a prompt that design & development prompt verified (create a sample of any product or service delivered to any client as per the scope).",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show a sample of design & development documentation for a product or service as per your organization’s scope. Include input/output records and version control."
+                )
+            },
+            {
+                "Document Name": "Design Review and Approval Sheet",
+                "Document Number": "IMS-F-22",
+                "Guidance/Description": "Write a prompt that design review and approval verified (create a sample of any product or service delivered to any client as per the scope).",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Provide a completed design review and approval sheet for a recent project, showing signatures/approvals and identified issues."
+                )
+            },
+            {
+                "Document Name": "Design Progess Sheet",
+                "Document Number": "IMS-F-23",
+                "Guidance/Description": "Write a prompt that design process flow verified (create a sample of any product or service delivered to any client as per the scope).",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Present a filled-in design process flow/progress sheet documenting key stages, milestones, and change management actions for a selected design project."
+                )
+            }
+        ],
+        "8.4": [
+            {
+                "Document Name": "Procedure for Selection & Evaluation of Vendors",
+                "Document Number": "IMS-P-12",
+                "Guidance/Description": "Describes selection, approval, and evaluation of suppliers.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide supplier evaluation records showing at least two vendors evaluated with outcomes. Include criteria used for assessment and ongoing monitoring actions."
+                )
+            },
+            {
+                "Document Name": "Procedure for Purchasing Management",
+                "Document Number": "IMS-P-13",
+                "Guidance/Description": "Defines the purchasing process and controls.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show sample purchase orders and evidence of implementation of purchasing procedures, including approval and verification steps."
+                )
+            },
+            {
+                "Document Name": "Vendor and Sub Contractor Registration Form",
+                "Document Number": "IMS-F-24",
+                "Guidance/Description": "Form used for registering new vendors/subcontractors.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide a completed registration form for a sample supplier, noting evaluation and approval process."
+                )
+            },
+            {
+                "Document Name": "List of Approved Vendors and Sub Contractors",
+                "Document Number": "IMS-F-25",
+                "Guidance/Description": "Current list of all approved suppliers and subcontractors.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the list with at least two example suppliers, including approval status and date of last evaluation."
+                )
+            },
+            {
+                "Document Name": "Vendor Registration Form",
+                "Document Number": "IMS-F-26",
+                "Guidance/Description": "Form evidencing vendor registration and approval.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show a completed and signed registration form for a vendor from the current year."
+                )
+            }
+        ],
+        "8.5.1": [
+            {
+                "Document Name": "Procedure for Service/Production/Contract",
+                "Document Number": "IMS-P-14",
+                "Guidance/Description": "Describes service, production, and contract controls.",
+                "Document Owner": "Operations Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide records (job cards, work instructions, service records) showing controls during product or service provision for a sample client."
+                )
+            },
+            {
+                "Document Name": "HSE work Instructions",
+                "Document Number": "IMS-F-27",
+                "Guidance/Description": "Work instructions addressing health, safety, and environment.",
+                "Document Owner": "HSE Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Present completed HSE inspection checklists or records, including a recent random safety inspection outcome."
+                )
+            }
+        ],
+        "8.5.2": [
+            {
+                "Document Name": "Procedure for Document and Record Control",
+                "Document Number": "IMS-P-14",
+                "Guidance/Description": "Defines controls for document identification and traceability.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show examples (logs, tags, digital tracking) of how documents or products are identified and traced throughout service or production."
+                )
+            },
+            {
+                "Document Name": "Change Management Form",
+                "Document Number": "IMS-F-28",
+                "Guidance/Description": "Form to log and authorize changes to production/service.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide a completed form for a recent change in production or service, detailing the traceability process."
+                )
+            },
+            {
+                "Document Name": "Master List of Documents",
+                "Document Number": "XXX-IMS-F-04",
+                "Guidance/Description": "Master index of all documents for traceability.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show how the master list supports document traceability, with an annotated example."
+                )
+            },
+            {
+                "Document Name": "Documents Change Request Form",
+                "Document Number": "IMS-F-21",
+                "Guidance/Description": "Request form for document changes affecting traceability.",
+                "Document Owner": "All Staff",
+                "Approved By": "Document Control Coordinator",
+                "Stage 2 Prompt": (
+                    "Show a sample of this form including traceability notes and resolution for one recent request."
+                )
+            }
+        ],
+        "8.5.3": [
+            {
+                "Document Name": "List of Item Received",
+                "Document Number": "IMS-F-29",
+                "Guidance/Description": "Log of customer or external provider property received.",
+                "Document Owner": "Warehouse Supervisor",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show a filled form evidencing the receipt and safeguarding of property from a customer or supplier."
+                )
+            }
+        ],
+        "8.5.4": [
+            {
+                "Document Name": "Preservation",
+                "Document Number": "General Description",
+                "Guidance/Description": "Describes measures for preservation of product through production/service lifecycle.",
+                "Document Owner": "Operations Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Explain methods for preserving product/service conformity (packaging, storage, labeling), and give an example from a recent job."
+                )
+            }
+        ],
+        "8.5.5": [
+            {
+                "Document Name": "Customer Feedback Analysis Report",
+                "Document Number": "IMS-F-30",
+                "Guidance/Description": "Reports on customer feedback and post-delivery activities.",
+                "Document Owner": "Customer Service Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Show a recent customer feedback report, delivery note, or post-delivery survey analysis with a completed action."
+                )
+            }
+        ],
+        "8.5.6": [
+            {
+                "Document Name": "Procedure for Change Management",
+                "Document Number": "IMS-P-15",
+                "Guidance/Description": "Describes the process for managing changes affecting product/service.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide a sample record of a product/service change from initial request to implementation for one project/client."
+                )
+            },
+            {
+                "Document Name": "Documents Change Request Form",
+                "Document Number": "IMS-F-21",
+                "Guidance/Description": "Form for logging changes as part of the change management process.",
+                "Document Owner": "All Staff",
+                "Approved By": "Document Control Coordinator",
+                "Stage 2 Prompt": (
+                    "Show a completed change request relating to a service/product delivered, including status and approvals."
+                )
+            }
+        ],
+        "8.6": [
+            {
+                "Document Name": "Final Inspection Report",
+                "Document Number": "IMS-F-30",
+                "Guidance/Description": "Final inspection record for product/service before release.",
+                "Document Owner": "Quality Inspector",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show at least one signed final inspection report for a product or service delivered to a client relevant to your scope."
+                )
+            }
+        ],
+        "8.7": [
+            {
+                "Document Name": "Procedure for Management of Non-Conformities and Corrective Actions",
+                "Document Number": "IMS-P-16",
+                "Guidance/Description": "Procedure to identify, control, and correct nonconforming outputs.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide records/log for 2-3 nonconforming outputs, including actions taken and follow-up verification."
+                )
+            },
+            {
+                "Document Name": "Registry and Status Nonconformities and Corrective Actions",
+                "Document Number": "IMS-F-31",
+                "Guidance/Description": "Log/register of nonconformities, corrections, and status.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Show the registry for the last year with two sample entries, their closure or current status, including evidence for action."
+                )
+            }
+        ],
+        "9.1": [
+            {
+                "Document Name": "Procedure for Monitoring & Measurement",
+                "Document Number": "IMS-P-17",
+                "Guidance/Description": "Defines how IMS performance is measured, analyzed, and evaluated.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show monitoring/measurement plan, filled records, and summaries/results for the last quarter."
+                )
+            }
+        ],
+        "9.1.1": [
+            {
+                "Document Name": "Procedure for Compliance Management",
+                "Document Number": "IMS-P-18",
+                "Guidance/Description": "Procedure for evaluation and management of compliance obligations.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide compliance monitoring records, audits, or status reports showing periodic review."
+                )
+            }
+        ],
+        "9.1.2": [
+            {
+                "Document Name": "Procedure for Identification for Legal Requirements",
+                "Document Number": "IMS-P-19",
+                "Guidance/Description": "Describes how legal and other requirements are identified and complied with.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show a recent update or review record for legal requirements, with one example of a regulatory change tracked and addressed."
+                )
+            },
+            {
+                "Document Name": "List of all legal documents and legal requirements",
+                "Document Number": "IMS-F-11",
+                "Guidance/Description": "Up-to-date register of all relevant legal requirements.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide a copy of the legal register and highlight the learning/action taken on a new requirement in the last 6 months."
+                )
+            }
+        ],
+        "9.1.3": [
+            {
+                "Document Name": "Data Analysis Record",
+                "Document Number": "IMS-F-03",
+                "Guidance/Description": "Record and analysis/results of monitored data for continual improvement.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show a sample analysis record and explain the actions decided based on this data analysis."
+                )
+            }
+        ],
+        "9.2": [
+            {
+                "Document Name": "Procedure for Internal Audit",
+                "Document Number": "IMS-F-04",
+                "Guidance/Description": "Describes how internal audits are planned, conducted, and followed up.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide the last two internal audit reports, including audit program and corrections for non-conformities identified."
+                )
+            },
+            {
+                "Document Name": "Internal Audit Program",
+                "Document Number": "IMS-F-32",
+                "Guidance/Description": "Schedule/calendar of planned internal audits.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current annual audit program including areas covered and assigned auditors."
+                )
+            },
+            {
+                "Document Name": "Internal Audit Schedule",
+                "Document Number": "IMS-F-33",
+                "Guidance/Description": "Detailed audit timetable and auditor assignments.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show the detailed schedule and confirmation/audit notifications sent."
+                )
+            },
+            {
+                "Document Name": "Internal Audit Report",
+                "Document Number": "IMS-F-34",
+                "Guidance/Description": "Completed report with findings, recommendations, and corrective action.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide a recent audit report, and summarize 2-3 nonconformities found, including their closure status and responsible persons."
+                )
+            }
+        ],
+        "9.3": [
+            {
+                "Document Name": "Procedure for Management Review",
+                "Document Number": "IMS-P-20",
+                "Guidance/Description": "Defines the management review process and requirements.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show management review schedule, agenda, and minutes for the most recent meeting, including actions and persons responsible."
+                )
+            },
+            {
+                "Document Name": "Management Review Minutes",
+                "Document Number": "IMS-F-35",
+                "Guidance/Description": "Signed minutes from management review meetings.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide the last approved minutes and highlight key outputs, decisions, and assigned actions."
+                )
+            }
+        ],
+        "10.2": [
+            {
+                "Document Name": "Procedure for Management of Non-Conformities and Corrective Actions",
+                "Document Number": "IMS-P-21",
+                "Guidance/Description": "Details how non-conformities are corrected and actions tracked.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide evidence of at least two corrective actions still in progress, along with their status, owner, and planned closure date."
+                )
+            },
+            {
+                "Document Name": "Registry and Status Nonconformities and Corrective Actions",
+                "Document Number": "IMS-F-36",
+                "Guidance/Description": "Register/log showing status of all non-conformities and corrective actions.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show registry with status updates and details for at least two nonconformities (open and closed)."
+                )
+            },
+            {
+                "Document Name": "Non Conformity Report",
+                "Document Number": "IMS-F-37",
+                "Guidance/Description": "Detailed report evidencing closure and verification for each nonconformity.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide a sample nonconformity closure report, including root cause, corrections, actions, and verification."
+                )
+            }
+        ],
+        "10.3": [
+            {
+                "Document Name": "Management Review Minutes",
+                "Document Number": "IMS-F-35",
+                "Guidance/Description": "Signed minutes, including continual improvement review and actions.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show evidence that continual improvement is reviewed and driven through management review (e.g., improvement actions and tracking)."
+                )
+            },
+            {
+                "Document Name": "Non Conformity Report",
+                "Document Number": "QHSE-F-37",
+                "Guidance/Description": "Evidence that continual improvement is achieved through corrective actions.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Submit an example where a nonconformity or suggestion led to a documented improvement of the management system or process."
+                )
+            }
+        ]
+        # ...expand for remaining clauses as needed...
+    }
+
+    pattern_3 = {
+        "4.1": [
+            {
+                "Document Name": "Integrated Management System Manual",
+                "Document Number": "QHSE-MAN-01",
+                "Guidance/Description": "Describes the organization's integrated management system and its context.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide evidence (meeting records, management review, implementation plans) that context of the organization is identified and considered in operational activities. Show how external and internal issues are reviewed and acted on."
+                )
+            },
+            {
+                "Document Name": "SWOT Analysis",
+                "Document Number": "QHSE-F-01",
+                "Guidance/Description": "Identifies strengths, weaknesses, opportunities, and threats.",
+                "Document Owner": "Process Owner",
+                "Approved By": "Top Management",
+                "Stage 2 Prompt": (
+                    "Provide a completed SWOT analysis form and describe how results influence actions, with a concrete example of a weakness or opportunity addressed."
+                )
+            },
+            {
+                "Document Name": "Context of Organization",
+                "Document Number": "QHSE-F-02",
+                "Guidance/Description": "Defines external and internal issues relevant to organizational purpose and QMS.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show the documented issues and explain, with examples, where any of these have prompted operational or policy changes."
+                )
+            },
+        ],
+        "4.2": [
+            {
+                "Document Name": "Procedure for Determining Context and Interested Parties",
+                "Document Number": "QHSE-P-01",
+                "Guidance/Description": "Process for identifying interested parties and their relevant needs and expectations.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Describe and show evidence that the organization has identified all relevant interested parties and determined their needs and expectations. List at least 4-5 actual interested parties (e.g., customers, regulators, staff, suppliers, contractors) and specific expectations for each. Show how this information is integrated into your management system."
+                )
+            },
+            {
+                "Document Name": "List of Interested Parties",
+                "Document Number": "QHSE-F-03",
+                "Guidance/Description": "Lists internal and external interested parties with their needs.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current interested parties list, and for 4-5 entries, show evidence that their expectations are tracked and acted on, such as communications, meeting minutes, or actions taken."
+                )
+            }
+        ],
+        "4.3": [
+            {
+                "Document Name": "Scope of the Quality management system",
+                "Document Number": "General Description",
+                "Guidance/Description": "Defines the boundaries and applicability of the management system.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide the documented scope and give real examples showing what is included and excluded; e.g., reference specific departments, locations, or processes."
+                )
+            }
+        ],
+        "4.4": [
+            {
+                "Document Name": "Process Interaction Chart",
+                "Document Number": "QHSE-PIC-01",
+                "Guidance/Description": "A diagram showing process interactions and interfaces.",
+                "Document Owner": "Process Owner",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show the process map/chart and explain with evidence (e.g., training records, cross-functional meetings) how these interactions are communicated and implemented."
+                )
+            },
+            {
+                "Document Name": "List of All procedures",
+                "Document Number": "QHSE-F-04",
+                "Guidance/Description": "Comprehensive inventory of all active management system procedures.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current version of the procedures list and a tracked change showing a recent update or addition."
+                )
+            }
+        ],
+        "5.1": [
+            {
+                "Document Name": "Leadership-general",
+                "Document Number": "General Description",
+                "Guidance/Description": "Describes top management’s leadership approach in the QMS.",
+                "Document Owner": "Managing Director",
+                "Approved By": "Board",
+                "Stage 2 Prompt": (
+                    "Give examples of leadership in action (e.g., signed policies, management review participation, communication records) showing how top management demonstrates commitment."
+                )
+            },
+            {
+                "Document Name": "Customer Focus",
+                "Document Number": "POL-02",
+                "Guidance/Description": "Policy for customer focus, satisfaction, and requirements.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide evidence (customer feedback reviews, complaint logs, actions taken) that customer focus is implemented and monitored."
+                )
+            },
+        ],
+        "5.2": [
+            {
+                "Document Name": "Quality, Environment, Health & Safety Policy",
+                "Document Number": "POL-02",
+                "Guidance/Description": "Signed and communicated QHSE policy document.",
+                "Document Owner": "Managing Director",
+                "Approved By": "Board",
+                "Stage 2 Prompt": (
+                    "Provide the current signed QHSE policy; show evidence of how it is communicated and understood at relevant functions and levels."
+                )
+            }
+        ],
+        "5.3": [
+            {
+                "Document Name": "Procedure for Roles, Responsibilities & Authorities",
+                "Document Number": "QHSE-P-02",
+                "Guidance/Description": "Defines functional roles, responsibilities, authorities.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide responsibility matrix or job descriptions and show evidence they are followed (e.g. signed documents, role-based process assignments)."
+                )
+            }
+        ],
+        "5.4": [
+            {
+                "Document Name": "Procedure for Consultation and participation of Workers",
+                "Document Number": "QHSE-P-03",
+                "Guidance/Description": "Process for involving employees in decisions affecting QHSE.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Present meeting minutes, suggestion system outputs, or other records showing worker involvement in QMS/EMS/OHSMS activities."
+                )
+            }
+        ],
+        "6.1.1": [
+            {
+                "Document Name": "Procedure for Addressing Risk and Opportunity",
+                "Document Number": "QHSE-P-04",
+                "Guidance/Description": "Documents risk and opportunity assessment and handling.",
+                "Document Owner": "Risk Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show risk register(s) and evidence that risks/opportunities are regularly identified, assessed, and acted on (e.g., risk reviews, controls implemented)."
+                )
+            },
+            {
+                "Document Name": "Registry of Key Risks & opportunities",
+                "Document Number": "QHSE-F-08",
+                "Guidance/Description": "Record of identified risks and opportunities.",
+                "Document Owner": "Risk Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current registry and examples of actions taken on identified risks/opportunities."
+                )
+            },
+        ],
+        "6.1.2": [
+            {
+                "Document Name": "Procedure for Environmental Impact Assessment",
+                "Document Number": "QHSE-P-05",
+                "Guidance/Description": "How to identify and manage environmental aspects and impacts.",
+                "Document Owner": "EHS Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide a completed impact assessment, and show how significant impacts are managed in your daily/operational practices."
+                )
+            },
+            {
+                "Document Name": "Procedure for Hazard Identification",
+                "Document Number": "QHSE-P-06",
+                "Guidance/Description": "Process for hazard identification and risk evaluation.",
+                "Document Owner": "Safety Officer",
+                "Approved By": "EHS Manager",
+                "Stage 2 Prompt": (
+                    "Show a record of identified hazards and evidence of implemented controls or corrective actions."
+                )
+            },
+            {
+                "Document Name": "Record of Environmental Aspect and Impact Analysis",
+                "Document Number": "QHSE-F-09",
+                "Guidance/Description": "Filled record of aspects and impact analyses.",
+                "Document Owner": "EHS Manager",
+                "Approved By": "Top Management",
+                "Stage 2 Prompt": (
+                    "Show the current filled record and evidence that it's regularly reviewed and updated."
+                )
+            },
+            {
+                "Document Name": "Records of Hazard Analysis and Risk Treatement",
+                "Document Number": "QHSE-F-10",
+                "Guidance/Description": "Actual hazard analysis and risk treatment records.",
+                "Document Owner": "Safety Officer",
+                "Approved By": "EHS Manager",
+                "Stage 2 Prompt": (
+                    "Present completed forms with evidence of actions taken as a result (e.g. mitigation implemented)."
+                )
+            }
+        ],
+        "6.1.3": [
+            {
+                "Document Name": "Procedure for identification for legal requirements",
+                "Document Number": "QHSE-P-07",
+                "Guidance/Description": "Process to identify, access and comply with legal/other requirements.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show the process for legal requirement identification, and current legal register. Give an example of recent new/changed requirement tracked and acted on."
+                )
+            },
+            {
+                "Document Name": "List of all legal documents and legal requirements",
+                "Document Number": "QHSE-F-11",
+                "Guidance/Description": "Register of legal/other compliance requirements.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide an up-to-date legal register and show evidence of ongoing review/updates."
+                )
+            }
+        ],
+        "6.2": [
+            {
+                "Document Name": "Quality & HSE Objectives, Quality & HSE objective monitoring sheets, Results of the Quality Objectives",
+                "Document Number": "QHSE-OBJ-01",
+                "Guidance/Description": "Records QHSE objectives, plans, performance indicators.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide current QHSE objectives, records of performance vs objectives, and evidence of action when objectives are not achieved."
+                )
+            },
+            {
+                "Document Name": "Objective Monitoring Action Plan and Results of Monitored Data",
+                "Document Number": "QHSE-F-12",
+                "Guidance/Description": "Filled records of objective monitoring/action plans.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Top Management",
+                "Stage 2 Prompt": (
+                    "Show filled action plans and monitoring records, and describe a real corrective action triggered following a missed target."
+                )
+            }
+        ],
+        "7.1": [
+            {
+                "Document Name": "List of Machinery, List of Computers, List of Assets, List of equipments",
+                "Document Number": "QHSE-F-13",
+                "Guidance/Description": "Inventory of major assets and machinery.",
+                "Document Owner": "Asset Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current asset list and evidence it's maintained and updated regularly; provide an example of how maintenance is scheduled using the list."
+                )
+            },
+            {
+                "Document Name": "Annual maintainance plan and calibration plan for machines and equipments",
+                "Document Number": "QHSE-F-42",
+                "Guidance/Description": "Schedules and records for maintenance/calibration.",
+                "Document Owner": "Maintenance Supervisor",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Show this year's plan and proof that maintenance and calibration are performed as scheduled (e.g., completed checklists, certificates)."
+                )
+            }
+        ],
+        "7.2": [
+            {
+                "Document Name": "Procedure for Training & Competenacy",
+                "Document Number": "QHSE-P-08",
+                "Guidance/Description": "How to manage and verify employee competency.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show training and competence procedure and evidence (training records, competence evaluations) that personnel are competent for roles assigned."
+                )
+            },
+            {
+                "Document Name": "Competence Matrix",
+                "Document Number": "QHSE-F-14",
+                "Guidance/Description": "Matrix of staff roles, competencies, qualification status.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show the current competence matrix and evidence that gaps are tracked and closed with actual data from the past year."
+                )
+            },
+            {
+                "Document Name": "Annual training Calendar",
+                "Document Number": "QHSE-F-15",
+                "Guidance/Description": "Planned training events for the year.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide recent annual training plan and proof of completed sessions."
+                )
+            },
+            {
+                "Document Name": "Effecetiveness of Training Provided",
+                "Document Number": "QHSE-F-16",
+                "Guidance/Description": "Evaluation of training effectiveness.",
+                "Document Owner": "Training Coordinator",
+                "Approved By": "HR Manager",
+                "Stage 2 Prompt": (
+                    "Present completed effectiveness evaluations and corrective actions taken if training outcomes were not met."
+                )
+            },
+            {
+                "Document Name": "Annual Training Records",
+                "Document Number": "QHSE-F-17",
+                "Guidance/Description": "Records of all training carried out in the year.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show signed training attendance records and certificates for at least 4 different trainings."
+                )
+            },
+            {
+                "Document Name": "Competence Evaluation",
+                "Document Number": "QHSE-F-18",
+                "Guidance/Description": "Evaluation records for individual competence.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "HR Manager",
+                "Stage 2 Prompt": (
+                    "Submit actual filled-in evaluation forms and show how incompetence is identified and corrected."
+                )
+            }
+        ],
+        "7.3": [
+            {
+                "Document Name": "Integrated Management System Manual",
+                "Document Number": "QHSE-MAN-01",
+                "Guidance/Description": "Manual describing the organization's QHSE.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show physical/digital copies of the manual and evidence that staff have access and reference it in work."
+                )
+            }
+        ],
+        "7.4": [
+            {
+                "Document Name": "Integrated Management System Manual",
+                "Document Number": "QHSE-MAN-01",
+                "Guidance/Description": "Manual includes communication procedures.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Explain how communication requirements from the manual are followed in practice; provide communications sent using the guidance."
+                )
+            },
+            {
+                "Document Name": "Procedure for Internal and External Communication",
+                "Document Number": "QHSE-P-09",
+                "Guidance/Description": "How the organization manages its internal/external communications.",
+                "Document Owner": "Communications Coordinator",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show an example of actual internal and external communication regarding QMS (e.g. safety alerts, customer letters)."
+                )
+            }
+        ],
+        "7.5": [
+            {
+                "Document Name": "Procedure for Document and Record Control",
+                "Document Number": "QHSE-P-09",
+                "Guidance/Description": "Document control process explained.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show a controlled document with revision history, and evidence that obsolete versions are removed from use."
+                )
+            },
+            {
+                "Document Name": "Master List of Documents",
+                "Document Number": "QHSE-F-04",
+                "Guidance/Description": "List of all controlled documents.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current master list, mark controlled/uncontrolled copies, and show an example of a document recently added or revised."
+                )
+            },
+            {
+                "Document Name": "List of External Origin Documents",
+                "Document Number": "QHSE-F-19",
+                "Guidance/Description": "Documents controlled that come from outside the organization.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide examples showing external documents tracked and updated—e.g., a regulation update tracked in the system."
+                )
+            },
+            {
+                "Document Name": "Documents Change Request Form",
+                "Document Number": "QHSE-F-20",
+                "Guidance/Description": "Form for requesting changes to documents.",
+                "Document Owner": "All Staff",
+                "Approved By": "Document Control Coordinator",
+                "Stage 2 Prompt": (
+                    "Provide one completed change request form and show how requests are logged and tracked."
+                )
+            }
+        ],
+        "8.1": [
+            {
+                "Document Name": "Master List of Operational Procedures",
+                "Document Number": "QHSE-F-04",
+                "Guidance/Description": "Write a prompt to list of core operation procedures as per the scope.",
+                "Document Owner": "",
+                # Not directly specified; usually Operations Manager or Process Owner – fill as per your org chart
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "List all core operational procedures maintained under the QHSE, as per your organization's scope. Show how these procedures are controlled and regularly reviewed."
+                )
+            },
+            {
+                "Document Name": "Change management Form",
+                "Document Number": "QHSE-F-21",
+                "Guidance/Description": "Change management documentation related to operational processes.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show completed change management forms reflecting changes in any operational procedure or process over the last year."
+                )
+            },
+            {
+                "Document Name": "Records of Hazard Analysis and Risk Treatement",
+                "Document Number": "QHSE-F-10",
+                "Guidance/Description": "Write a prompt about the hazard analysis and risk treatment identified for each operational procedure.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Provide filled records of hazard analysis and risk treatment performed for major operational activities. Give an example illustrating how results from these records led to implemented controls."
+                )
+            }
+        ],
+        "8.2": [
+            {
+                "Document Name": "Master List of Operational Procedures",
+                "Document Number": "QHSE-F-04",
+                "Guidance/Description": "Write a prompt to list of core operation procedures as per the scope.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show the master list of operational procedures with reference to customer requirements. Provide a sample showing the trace from customer requirements to documented procedures."
+                )
+            },
+            {
+                "Document Name": "Procedure for Emergency Preparedness",
+                "Document Number": "QHSE-P-10",
+                "Guidance/Description": "Write a prompt that emergency evacuation plan verified and found evident.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show your current emergency preparedness procedure. Provide evidence (e.g., evacuation drill records) that the plan is tested and known by staff."
+                )
+            }
+        ],
+        "8.3": [
+            {
+                "Document Name": "Procedure for Identification of Design Input & Output of the product and services",
+                "Document Number": "QHSE-P-11",
+                "Guidance/Description": "Write a prompt that design & development prompt verified (create a sample of any product or service delivered to any client as per the scope).",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show a sample of design & development documentation for a product or service as per your organization’s scope. Include input/output records and version control."
+                )
+            },
+            {
+                "Document Name": "Design Review and Approval Sheet",
+                "Document Number": "QHSE-F-22",
+                "Guidance/Description": "Write a prompt that design review and approval verified (create a sample of any product or service delivered to any client as per the scope).",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Provide a completed design review and approval sheet for a recent project, showing signatures/approvals and identified issues."
+                )
+            },
+            {
+                "Document Name": "Design Progess Sheet",
+                "Document Number": "QHSE-F-23",
+                "Guidance/Description": "Write a prompt that design process flow verified (create a sample of any product or service delivered to any client as per the scope).",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Present a filled-in design process flow/progress sheet documenting key stages, milestones, and change management actions for a selected design project."
+                )
+            }
+        ],
+        "8.4": [
+            {
+                "Document Name": "Procedure for Selection & Evaluation of Vendors",
+                "Document Number": "QHSE-P-12",
+                "Guidance/Description": "Describes selection, approval, and evaluation of suppliers.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide supplier evaluation records showing at least two vendors evaluated with outcomes. Include criteria used for assessment and ongoing monitoring actions."
+                )
+            },
+            {
+                "Document Name": "Procedure for Purchasing Management",
+                "Document Number": "QHSE-P-13",
+                "Guidance/Description": "Defines the purchasing process and controls.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show sample purchase orders and evidence of implementation of purchasing procedures, including approval and verification steps."
+                )
+            },
+            {
+                "Document Name": "Vendor and Sub Contractor Registration Form",
+                "Document Number": "QHSE-F-24",
+                "Guidance/Description": "Form used for registering new vendors/subcontractors.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide a completed registration form for a sample supplier, noting evaluation and approval process."
+                )
+            },
+            {
+                "Document Name": "List of Approved Vendors and Sub Contractors",
+                "Document Number": "QHSE-F-25",
+                "Guidance/Description": "Current list of all approved suppliers and subcontractors.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the list with at least two example suppliers, including approval status and date of last evaluation."
+                )
+            },
+            {
+                "Document Name": "Vendor Registration Form",
+                "Document Number": "QHSE-F-26",
+                "Guidance/Description": "Form evidencing vendor registration and approval.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show a completed and signed registration form for a vendor from the current year."
+                )
+            }
+        ],
+        "8.5.1": [
+            {
+                "Document Name": "Procedure for Service/Production/Contract",
+                "Document Number": "QHSE-P-14",
+                "Guidance/Description": "Describes service, production, and contract controls.",
+                "Document Owner": "Operations Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide records (job cards, work instructions, service records) showing controls during product or service provision for a sample client."
+                )
+            },
+            {
+                "Document Name": "HSE work Instructions",
+                "Document Number": "QHSE-F-27",
+                "Guidance/Description": "Work instructions addressing health, safety, and environment.",
+                "Document Owner": "HSE Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Present completed HSE inspection checklists or records, including a recent random safety inspection outcome."
+                )
+            }
+        ],
+        "8.5.2": [
+            {
+                "Document Name": "Procedure for Document and Record Control",
+                "Document Number": "QHSE-P-14",
+                "Guidance/Description": "Defines controls for document identification and traceability.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show examples (logs, tags, digital tracking) of how documents or products are identified and traced throughout service or production."
+                )
+            },
+            {
+                "Document Name": "Change Management Form",
+                "Document Number": "QHSE-F-28",
+                "Guidance/Description": "Form to log and authorize changes to production/service.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide a completed form for a recent change in production or service, detailing the traceability process."
+                )
+            },
+            {
+                "Document Name": "Master List of Documents",
+                "Document Number": "XXX-QHSE-F-04",
+                "Guidance/Description": "Master index of all documents for traceability.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show how the master list supports document traceability, with an annotated example."
+                )
+            },
+            {
+                "Document Name": "Documents Change Request Form",
+                "Document Number": "QHSE-F-21",
+                "Guidance/Description": "Request form for document changes affecting traceability.",
+                "Document Owner": "All Staff",
+                "Approved By": "Document Control Coordinator",
+                "Stage 2 Prompt": (
+                    "Show a sample of this form including traceability notes and resolution for one recent request."
+                )
+            }
+        ],
+        "8.5.3": [
+            {
+                "Document Name": "List of Item Received",
+                "Document Number": "QHSE-F-29",
+                "Guidance/Description": "Log of customer or external provider property received.",
+                "Document Owner": "Warehouse Supervisor",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show a filled form evidencing the receipt and safeguarding of property from a customer or supplier."
+                )
+            }
+        ],
+        "8.5.4": [
+            {
+                "Document Name": "Preservation",
+                "Document Number": "General Description",
+                "Guidance/Description": "Describes measures for preservation of product through production/service lifecycle.",
+                "Document Owner": "Operations Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Explain methods for preserving product/service conformity (packaging, storage, labeling), and give an example from a recent job."
+                )
+            }
+        ],
+        "8.5.5": [
+            {
+                "Document Name": "Customer Feedback Analysis Report",
+                "Document Number": "QHSE-F-30",
+                "Guidance/Description": "Reports on customer feedback and post-delivery activities.",
+                "Document Owner": "Customer Service Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Show a recent customer feedback report, delivery note, or post-delivery survey analysis with a completed action."
+                )
+            }
+        ],
+        "8.5.6": [
+            {
+                "Document Name": "Procedure for Change Management",
+                "Document Number": "QHSE-P-15",
+                "Guidance/Description": "Describes the process for managing changes affecting product/service.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide a sample record of a product/service change from initial request to implementation for one project/client."
+                )
+            },
+            {
+                "Document Name": "Documents Change Request Form",
+                "Document Number": "QHSE-F-21",
+                "Guidance/Description": "Form for logging changes as part of the change management process.",
+                "Document Owner": "All Staff",
+                "Approved By": "Document Control Coordinator",
+                "Stage 2 Prompt": (
+                    "Show a completed change request relating to a service/product delivered, including status and approvals."
+                )
+            }
+        ],
+        "8.6": [
+            {
+                "Document Name": "Final Inspection Report",
+                "Document Number": "QHSE-F-30",
+                "Guidance/Description": "Final inspection record for product/service before release.",
+                "Document Owner": "Quality Inspector",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show at least one signed final inspection report for a product or service delivered to a client relevant to your scope."
+                )
+            }
+        ],
+        "8.7": [
+            {
+                "Document Name": "Procedure for Management of Non-Conformities and Corrective Actions",
+                "Document Number": "QHSE-P-16",
+                "Guidance/Description": "Procedure to identify, control, and correct nonconforming outputs.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide records/log for 2-3 nonconforming outputs, including actions taken and follow-up verification."
+                )
+            },
+            {
+                "Document Name": "Registry and Status Nonconformities and Corrective Actions",
+                "Document Number": "QHSE-F-31",
+                "Guidance/Description": "Log/register of nonconformities, corrections, and status.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Show the registry for the last year with two sample entries, their closure or current status, including evidence for action."
+                )
+            }
+        ],
+        "9.1": [
+            {
+                "Document Name": "Procedure for Monitoring & Measurement",
+                "Document Number": "QHSE-P-17",
+                "Guidance/Description": "Defines how QHSE performance is measured, analyzed, and evaluated.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show monitoring/measurement plan, filled records, and summaries/results for the last quarter."
+                )
+            }
+        ],
+        "9.1.1": [
+            {
+                "Document Name": "Procedure for Compliance Management",
+                "Document Number": "QHSE-P-18",
+                "Guidance/Description": "Procedure for evaluation and management of compliance obligations.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide compliance monitoring records, audits, or status reports showing periodic review."
+                )
+            }
+        ],
+        "9.1.2": [
+            {
+                "Document Name": "Procedure for Identification for Legal Requirements",
+                "Document Number": "QHSE-P-19",
+                "Guidance/Description": "Describes how legal and other requirements are identified and complied with.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show a recent update or review record for legal requirements, with one example of a regulatory change tracked and addressed."
+                )
+            },
+            {
+                "Document Name": "List of all legal documents and legal requirements",
+                "Document Number": "QHSE-F-11",
+                "Guidance/Description": "Up-to-date register of all relevant legal requirements.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide a copy of the legal register and highlight the learning/action taken on a new requirement in the last 6 months."
+                )
+            }
+        ],
+        "9.1.3": [
+            {
+                "Document Name": "Data Analysis Record",
+                "Document Number": "QHSE-F-03",
+                "Guidance/Description": "Record and analysis/results of monitored data for continual improvement.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show a sample analysis record and explain the actions decided based on this data analysis."
+                )
+            }
+        ],
+        "9.2": [
+            {
+                "Document Name": "Procedure for Internal Audit",
+                "Document Number": "QHSE-F-04",
+                "Guidance/Description": "Describes how internal audits are planned, conducted, and followed up.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide the last two internal audit reports, including audit program and corrections for non-conformities identified."
+                )
+            },
+            {
+                "Document Name": "Internal Audit Program",
+                "Document Number": "QHSE-F-32",
+                "Guidance/Description": "Schedule/calendar of planned internal audits.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current annual audit program including areas covered and assigned auditors."
+                )
+            },
+            {
+                "Document Name": "Internal Audit Schedule",
+                "Document Number": "QHSE-F-33",
+                "Guidance/Description": "Detailed audit timetable and auditor assignments.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show the detailed schedule and confirmation/audit notifications sent."
+                )
+            },
+            {
+                "Document Name": "Internal Audit Report",
+                "Document Number": "QHSE-F-34",
+                "Guidance/Description": "Completed report with findings, recommendations, and corrective action.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide a recent audit report, and summarize 2-3 nonconformities found, including their closure status and responsible persons."
+                )
+            }
+        ],
+        "9.3": [
+            {
+                "Document Name": "Procedure for Management Review",
+                "Document Number": "QHSE-P-20",
+                "Guidance/Description": "Defines the management review process and requirements.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show management review schedule, agenda, and minutes for the most recent meeting, including actions and persons responsible."
+                )
+            },
+            {
+                "Document Name": "Management Review Minutes",
+                "Document Number": "QHSE-F-35",
+                "Guidance/Description": "Signed minutes from management review meetings.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide the last approved minutes and highlight key outputs, decisions, and assigned actions."
+                )
+            }
+        ],
+        "10.2": [
+            {
+                "Document Name": "Procedure for Management of Non-Conformities and Corrective Actions",
+                "Document Number": "QHSE-P-21",
+                "Guidance/Description": "Details how non-conformities are corrected and actions tracked.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide evidence of at least two corrective actions still in progress, along with their status, owner, and planned closure date."
+                )
+            },
+            {
+                "Document Name": "Registry and Status Nonconformities and Corrective Actions",
+                "Document Number": "QHSE-F-36",
+                "Guidance/Description": "Register/log showing status of all non-conformities and corrective actions.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show registry with status updates and details for at least two nonconformities (open and closed)."
+                )
+            },
+            {
+                "Document Name": "Non Conformity Report",
+                "Document Number": "QHSE-F-37",
+                "Guidance/Description": "Detailed report evidencing closure and verification for each nonconformity.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide a sample nonconformity closure report, including root cause, corrections, actions, and verification."
+                )
+            }
+        ],
+        "10.3": [
+            {
+                "Document Name": "Management Review Minutes",
+                "Document Number": "QHSE-F-35",
+                "Guidance/Description": "Signed minutes, including continual improvement review and actions.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show evidence that continual improvement is reviewed and driven through management review (e.g., improvement actions and tracking)."
+                )
+            },
+            {
+                "Document Name": "Non Conformity Report",
+                "Document Number": "QHSE-F-37",
+                "Guidance/Description": "Evidence that continual improvement is achieved through corrective actions.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Submit an example where a nonconformity or suggestion led to a documented improvement of the management system or process."
+                )
+            }
+        ]
+        # ...expand for remaining clauses as needed...
+    }
+
+    pattern_4 = {
+        "4.1": [
+            {
+                "Document Name": "Integrated Management System Manual",
+                "Document Number": "MAN-01",
+                "Guidance/Description": "Describes the organization's integrated management system and its context.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide evidence (meeting records, management review, implementation plans) that context of the organization is identified and considered in operational activities. Show how external and internal issues are reviewed and acted on."
+                )
+            },
+            {
+                "Document Name": "SWOT Analysis",
+                "Document Number": "F-01",
+                "Guidance/Description": "Identifies strengths, weaknesses, opportunities, and threats.",
+                "Document Owner": "Process Owner",
+                "Approved By": "Top Management",
+                "Stage 2 Prompt": (
+                    "Provide a completed SWOT analysis form and describe how results influence actions, with a concrete example of a weakness or opportunity addressed."
+                )
+            },
+            {
+                "Document Name": "Context of Organization",
+                "Document Number": "F-02",
+                "Guidance/Description": "Defines external and internal issues relevant to organizational purpose and QMS.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show the documented issues and explain, with examples, where any of these have prompted operational or policy changes."
+                )
+            },
+        ],
+        "4.2": [
+            {
+                "Document Name": "Procedure for Determining Context and Interested Parties",
+                "Document Number": "P-01",
+                "Guidance/Description": "Process for identifying interested parties and their relevant needs and expectations.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Describe and show evidence that the organization has identified all relevant interested parties and determined their needs and expectations. List at least 4-5 actual interested parties (e.g., customers, regulators, staff, suppliers, contractors) and specific expectations for each. Show how this information is integrated into your management system."
+                )
+            },
+            {
+                "Document Name": "List of Interested Parties",
+                "Document Number": "F-03",
+                "Guidance/Description": "Lists internal and external interested parties with their needs.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current interested parties list, and for 4-5 entries, show evidence that their expectations are tracked and acted on, such as communications, meeting minutes, or actions taken."
+                )
+            }
+        ],
+        "4.3": [
+            {
+                "Document Name": "Scope of the Quality management system",
+                "Document Number": "General Description",
+                "Guidance/Description": "Defines the boundaries and applicability of the management system.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide the documented scope and give real examples showing what is included and excluded; e.g., reference specific departments, locations, or processes."
+                )
+            }
+        ],
+        "4.4": [
+            {
+                "Document Name": "Process Interaction Chart",
+                "Document Number": "PIC-01",
+                "Guidance/Description": "A diagram showing process interactions and interfaces.",
+                "Document Owner": "Process Owner",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show the process map/chart and explain with evidence (e.g., training records, cross-functional meetings) how these interactions are communicated and implemented."
+                )
+            },
+            {
+                "Document Name": "List of All procedures",
+                "Document Number": "F-04",
+                "Guidance/Description": "Comprehensive inventory of all active management system procedures.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current version of the procedures list and a tracked change showing a recent update or addition."
+                )
+            }
+        ],
+        "5.1": [
+            {
+                "Document Name": "Leadership-general",
+                "Document Number": "General Description",
+                "Guidance/Description": "Describes top management’s leadership approach in the QMS.",
+                "Document Owner": "Managing Director",
+                "Approved By": "Board",
+                "Stage 2 Prompt": (
+                    "Give examples of leadership in action (e.g., signed policies, management review participation, communication records) showing how top management demonstrates commitment."
+                )
+            },
+            {
+                "Document Name": "Customer Focus",
+                "Document Number": "POL-02",
+                "Guidance/Description": "Policy for customer focus, satisfaction, and requirements.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide evidence (customer feedback reviews, complaint logs, actions taken) that customer focus is implemented and monitored."
+                )
+            },
+        ],
+        "5.2": [
+            {
+                "Document Name": "Quality, Environment, Health & Safety Policy",
+                "Document Number": "POL-02",
+                "Guidance/Description": "Signed and communicated QHSE policy document.",
+                "Document Owner": "Managing Director",
+                "Approved By": "Board",
+                "Stage 2 Prompt": (
+                    "Provide the current signed QHSE policy; show evidence of how it is communicated and understood at relevant functions and levels."
+                )
+            }
+        ],
+        "5.3": [
+            {
+                "Document Name": "Procedure for Roles, Responsibilities & Authorities",
+                "Document Number": "P-02",
+                "Guidance/Description": "Defines functional roles, responsibilities, authorities.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide responsibility matrix or job descriptions and show evidence they are followed (e.g. signed documents, role-based process assignments)."
+                )
+            }
+        ],
+        "5.4": [
+            {
+                "Document Name": "Procedure for Consultation and participation of Workers",
+                "Document Number": "P-03",
+                "Guidance/Description": "Process for involving employees in decisions affecting QHSE.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Present meeting minutes, suggestion system outputs, or other records showing worker involvement in QMS/EMS/OHSMS activities."
+                )
+            }
+        ],
+        "6.1.1": [
+            {
+                "Document Name": "Procedure for Addressing Risk and Opportunity",
+                "Document Number": "P-04",
+                "Guidance/Description": "Documents risk and opportunity assessment and handling.",
+                "Document Owner": "Risk Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show risk register(s) and evidence that risks/opportunities are regularly identified, assessed, and acted on (e.g., risk reviews, controls implemented)."
+                )
+            },
+            {
+                "Document Name": "Registry of Key Risks & opportunities",
+                "Document Number": "F-08",
+                "Guidance/Description": "Record of identified risks and opportunities.",
+                "Document Owner": "Risk Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current registry and examples of actions taken on identified risks/opportunities."
+                )
+            },
+        ],
+        "6.1.2": [
+            {
+                "Document Name": "Procedure for Environmental Impact Assessment",
+                "Document Number": "P-05",
+                "Guidance/Description": "How to identify and manage environmental aspects and impacts.",
+                "Document Owner": "EHS Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide a completed impact assessment, and show how significant impacts are managed in your daily/operational practices."
+                )
+            },
+            {
+                "Document Name": "Procedure for Hazard Identification",
+                "Document Number": "P-06",
+                "Guidance/Description": "Process for hazard identification and risk evaluation.",
+                "Document Owner": "Safety Officer",
+                "Approved By": "EHS Manager",
+                "Stage 2 Prompt": (
+                    "Show a record of identified hazards and evidence of implemented controls or corrective actions."
+                )
+            },
+            {
+                "Document Name": "Record of Environmental Aspect and Impact Analysis",
+                "Document Number": "F-09",
+                "Guidance/Description": "Filled record of aspects and impact analyses.",
+                "Document Owner": "EHS Manager",
+                "Approved By": "Top Management",
+                "Stage 2 Prompt": (
+                    "Show the current filled record and evidence that it's regularly reviewed and updated."
+                )
+            },
+            {
+                "Document Name": "Records of Hazard Analysis and Risk Treatement",
+                "Document Number": "F-10",
+                "Guidance/Description": "Actual hazard analysis and risk treatment records.",
+                "Document Owner": "Safety Officer",
+                "Approved By": "EHS Manager",
+                "Stage 2 Prompt": (
+                    "Present completed forms with evidence of actions taken as a result (e.g. mitigation implemented)."
+                )
+            }
+        ],
+        "6.1.3": [
+            {
+                "Document Name": "Procedure for identification for legal requirements",
+                "Document Number": "P-07",
+                "Guidance/Description": "Process to identify, access and comply with legal/other requirements.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show the process for legal requirement identification, and current legal register. Give an example of recent new/changed requirement tracked and acted on."
+                )
+            },
+            {
+                "Document Name": "List of all legal documents and legal requirements",
+                "Document Number": "F-11",
+                "Guidance/Description": "Register of legal/other compliance requirements.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide an up-to-date legal register and show evidence of ongoing review/updates."
+                )
+            }
+        ],
+        "6.2": [
+            {
+                "Document Name": "Quality & HSE Objectives, Quality & HSE objective monitoring sheets, Results of the Quality Objectives",
+                "Document Number": "OBJ-01",
+                "Guidance/Description": "Records QHSE objectives, plans, performance indicators.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide current QHSE objectives, records of performance vs objectives, and evidence of action when objectives are not achieved."
+                )
+            },
+            {
+                "Document Name": "Objective Monitoring Action Plan and Results of Monitored Data",
+                "Document Number": "F-12",
+                "Guidance/Description": "Filled records of objective monitoring/action plans.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Top Management",
+                "Stage 2 Prompt": (
+                    "Show filled action plans and monitoring records, and describe a real corrective action triggered following a missed target."
+                )
+            }
+        ],
+        "7.1": [
+            {
+                "Document Name": "List of Machinery, List of Computers, List of Assets, List of equipments",
+                "Document Number": "F-13",
+                "Guidance/Description": "Inventory of major assets and machinery.",
+                "Document Owner": "Asset Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current asset list and evidence it's maintained and updated regularly; provide an example of how maintenance is scheduled using the list."
+                )
+            },
+            {
+                "Document Name": "Annual maintainance plan and calibration plan for machines and equipments",
+                "Document Number": "F-42",
+                "Guidance/Description": "Schedules and records for maintenance/calibration.",
+                "Document Owner": "Maintenance Supervisor",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Show this year's plan and proof that maintenance and calibration are performed as scheduled (e.g., completed checklists, certificates)."
+                )
+            }
+        ],
+        "7.2": [
+            {
+                "Document Name": "Procedure for Training & Competenacy",
+                "Document Number": "P-08",
+                "Guidance/Description": "How to manage and verify employee competency.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show training and competence procedure and evidence (training records, competence evaluations) that personnel are competent for roles assigned."
+                )
+            },
+            {
+                "Document Name": "Competence Matrix",
+                "Document Number": "F-14",
+                "Guidance/Description": "Matrix of staff roles, competencies, qualification status.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show the current competence matrix and evidence that gaps are tracked and closed with actual data from the past year."
+                )
+            },
+            {
+                "Document Name": "Annual training Calendar",
+                "Document Number": "F-15",
+                "Guidance/Description": "Planned training events for the year.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide recent annual training plan and proof of completed sessions."
+                )
+            },
+            {
+                "Document Name": "Effecetiveness of Training Provided",
+                "Document Number": "F-16",
+                "Guidance/Description": "Evaluation of training effectiveness.",
+                "Document Owner": "Training Coordinator",
+                "Approved By": "HR Manager",
+                "Stage 2 Prompt": (
+                    "Present completed effectiveness evaluations and corrective actions taken if training outcomes were not met."
+                )
+            },
+            {
+                "Document Name": "Annual Training Records",
+                "Document Number": "F-17",
+                "Guidance/Description": "Records of all training carried out in the year.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show signed training attendance records and certificates for at least 4 different trainings."
+                )
+            },
+            {
+                "Document Name": "Competence Evaluation",
+                "Document Number": "F-18",
+                "Guidance/Description": "Evaluation records for individual competence.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "HR Manager",
+                "Stage 2 Prompt": (
+                    "Submit actual filled-in evaluation forms and show how incompetence is identified and corrected."
+                )
+            }
+        ],
+        "7.3": [
+            {
+                "Document Name": "Integrated Management System Manual",
+                "Document Number": "MAN-01",
+                "Guidance/Description": "Manual describing the organization's IMS.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show physical/digital copies of the manual and evidence that staff have access and reference it in work."
+                )
+            }
+        ],
+        "7.4": [
+            {
+                "Document Name": "Integrated Management System Manual",
+                "Document Number": "MAN-01",
+                "Guidance/Description": "Manual includes communication procedures.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Explain how communication requirements from the manual are followed in practice; provide communications sent using the guidance."
+                )
+            },
+            {
+                "Document Name": "Procedure for Internal and External Communication",
+                "Document Number": "P-09",
+                "Guidance/Description": "How the organization manages its internal/external communications.",
+                "Document Owner": "Communications Coordinator",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show an example of actual internal and external communication regarding QMS (e.g. safety alerts, customer letters)."
+                )
+            }
+        ],
+        "7.5": [
+            {
+                "Document Name": "Procedure for Document and Record Control",
+                "Document Number": "P-09",
+                "Guidance/Description": "Document control process explained.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show a controlled document with revision history, and evidence that obsolete versions are removed from use."
+                )
+            },
+            {
+                "Document Name": "Master List of Documents",
+                "Document Number": "F-04",
+                "Guidance/Description": "List of all controlled documents.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current master list, mark controlled/uncontrolled copies, and show an example of a document recently added or revised."
+                )
+            },
+            {
+                "Document Name": "List of External Origin Documents",
+                "Document Number": "F-19",
+                "Guidance/Description": "Documents controlled that come from outside the organization.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide examples showing external documents tracked and updated—e.g., a regulation update tracked in the system."
+                )
+            },
+            {
+                "Document Name": "Documents Change Request Form",
+                "Document Number": "F-20",
+                "Guidance/Description": "Form for requesting changes to documents.",
+                "Document Owner": "All Staff",
+                "Approved By": "Document Control Coordinator",
+                "Stage 2 Prompt": (
+                    "Provide one completed change request form and show how requests are logged and tracked."
+                )
+            }
+        ],
+        "8.1": [
+            {
+                "Document Name": "Master List of Operational Procedures",
+                "Document Number": "F-04",
+                "Guidance/Description": "Write a prompt to list of core operation procedures as per the scope.",
+                "Document Owner": "",
+                # Not directly specified; usually Operations Manager or Process Owner – fill as per your org chart
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "List all core operational procedures maintained under the IMS, as per your organization's scope. Show how these procedures are controlled and regularly reviewed."
+                )
+            },
+            {
+                "Document Name": "Change management Form",
+                "Document Number": "F-21",
+                "Guidance/Description": "Change management documentation related to operational processes.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show completed change management forms reflecting changes in any operational procedure or process over the last year."
+                )
+            },
+            {
+                "Document Name": "Records of Hazard Analysis and Risk Treatement",
+                "Document Number": "F-10",
+                "Guidance/Description": "Write a prompt about the hazard analysis and risk treatment identified for each operational procedure.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Provide filled records of hazard analysis and risk treatment performed for major operational activities. Give an example illustrating how results from these records led to implemented controls."
+                )
+            }
+        ],
+        "8.2": [
+            {
+                "Document Name": "Master List of Operational Procedures",
+                "Document Number": "F-04",
+                "Guidance/Description": "Write a prompt to list of core operation procedures as per the scope.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show the master list of operational procedures with reference to customer requirements. Provide a sample showing the trace from customer requirements to documented procedures."
+                )
+            },
+            {
+                "Document Name": "Procedure for Emergency Preparedness",
+                "Document Number": "P-10",
+                "Guidance/Description": "Write a prompt that emergency evacuation plan verified and found evident.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show your current emergency preparedness procedure. Provide evidence (e.g., evacuation drill records) that the plan is tested and known by staff."
+                )
+            }
+        ],
+        "8.3": [
+            {
+                "Document Name": "Procedure for Identification of Design Input & Output of the product and services",
+                "Document Number": "P-11",
+                "Guidance/Description": "Write a prompt that design & development prompt verified (create a sample of any product or service delivered to any client as per the scope).",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show a sample of design & development documentation for a product or service as per your organization’s scope. Include input/output records and version control."
+                )
+            },
+            {
+                "Document Name": "Design Review and Approval Sheet",
+                "Document Number": "F-22",
+                "Guidance/Description": "Write a prompt that design review and approval verified (create a sample of any product or service delivered to any client as per the scope).",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Provide a completed design review and approval sheet for a recent project, showing signatures/approvals and identified issues."
+                )
+            },
+            {
+                "Document Name": "Design Progess Sheet",
+                "Document Number": "F-23",
+                "Guidance/Description": "Write a prompt that design process flow verified (create a sample of any product or service delivered to any client as per the scope).",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Present a filled-in design process flow/progress sheet documenting key stages, milestones, and change management actions for a selected design project."
+                )
+            }
+        ],
+        "8.4": [
+            {
+                "Document Name": "Procedure for Selection & Evaluation of Vendors",
+                "Document Number": "P-12",
+                "Guidance/Description": "Describes selection, approval, and evaluation of suppliers.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide supplier evaluation records showing at least two vendors evaluated with outcomes. Include criteria used for assessment and ongoing monitoring actions."
+                )
+            },
+            {
+                "Document Name": "Procedure for Purchasing Management",
+                "Document Number": "P-13",
+                "Guidance/Description": "Defines the purchasing process and controls.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show sample purchase orders and evidence of implementation of purchasing procedures, including approval and verification steps."
+                )
+            },
+            {
+                "Document Name": "Vendor and Sub Contractor Registration Form",
+                "Document Number": "F-24",
+                "Guidance/Description": "Form used for registering new vendors/subcontractors.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide a completed registration form for a sample supplier, noting evaluation and approval process."
+                )
+            },
+            {
+                "Document Name": "List of Approved Vendors and Sub Contractors",
+                "Document Number": "F-25",
+                "Guidance/Description": "Current list of all approved suppliers and subcontractors.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the list with at least two example suppliers, including approval status and date of last evaluation."
+                )
+            },
+            {
+                "Document Name": "Vendor Registration Form",
+                "Document Number": "F-26",
+                "Guidance/Description": "Form evidencing vendor registration and approval.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show a completed and signed registration form for a vendor from the current year."
+                )
+            }
+        ],
+        "8.5.1": [
+            {
+                "Document Name": "Procedure for Service/Production/Contract",
+                "Document Number": "P-14",
+                "Guidance/Description": "Describes service, production, and contract controls.",
+                "Document Owner": "Operations Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide records (job cards, work instructions, service records) showing controls during product or service provision for a sample client."
+                )
+            },
+            {
+                "Document Name": "HSE work Instructions",
+                "Document Number": "F-27",
+                "Guidance/Description": "Work instructions addressing health, safety, and environment.",
+                "Document Owner": "HSE Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Present completed HSE inspection checklists or records, including a recent random safety inspection outcome."
+                )
+            }
+        ],
+        "8.5.2": [
+            {
+                "Document Name": "Procedure for Document and Record Control",
+                "Document Number": "P-14",
+                "Guidance/Description": "Defines controls for document identification and traceability.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show examples (logs, tags, digital tracking) of how documents or products are identified and traced throughout service or production."
+                )
+            },
+            {
+                "Document Name": "Change Management Form",
+                "Document Number": "F-28",
+                "Guidance/Description": "Form to log and authorize changes to production/service.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide a completed form for a recent change in production or service, detailing the traceability process."
+                )
+            },
+            {
+                "Document Name": "Master List of Documents",
+                "Document Number": "F-04",
+                "Guidance/Description": "Master index of all documents for traceability.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show how the master list supports document traceability, with an annotated example."
+                )
+            },
+            {
+                "Document Name": "Documents Change Request Form",
+                "Document Number": "F-21",
+                "Guidance/Description": "Request form for document changes affecting traceability.",
+                "Document Owner": "All Staff",
+                "Approved By": "Document Control Coordinator",
+                "Stage 2 Prompt": (
+                    "Show a sample of this form including traceability notes and resolution for one recent request."
+                )
+            }
+        ],
+        "8.5.3": [
+            {
+                "Document Name": "List of Item Received",
+                "Document Number": "F-29",
+                "Guidance/Description": "Log of customer or external provider property received.",
+                "Document Owner": "Warehouse Supervisor",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show a filled form evidencing the receipt and safeguarding of property from a customer or supplier."
+                )
+            }
+        ],
+        "8.5.4": [
+            {
+                "Document Name": "Preservation",
+                "Document Number": "General Description",
+                "Guidance/Description": "Describes measures for preservation of product through production/service lifecycle.",
+                "Document Owner": "Operations Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Explain methods for preserving product/service conformity (packaging, storage, labeling), and give an example from a recent job."
+                )
+            }
+        ],
+        "8.5.5": [
+            {
+                "Document Name": "Customer Feedback Analysis Report",
+                "Document Number": "F-30",
+                "Guidance/Description": "Reports on customer feedback and post-delivery activities.",
+                "Document Owner": "Customer Service Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Show a recent customer feedback report, delivery note, or post-delivery survey analysis with a completed action."
+                )
+            }
+        ],
+        "8.5.6": [
+            {
+                "Document Name": "Procedure for Change Management",
+                "Document Number": "P-15",
+                "Guidance/Description": "Describes the process for managing changes affecting product/service.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide a sample record of a product/service change from initial request to implementation for one project/client."
+                )
+            },
+            {
+                "Document Name": "Documents Change Request Form",
+                "Document Number": "F-21",
+                "Guidance/Description": "Form for logging changes as part of the change management process.",
+                "Document Owner": "All Staff",
+                "Approved By": "Document Control Coordinator",
+                "Stage 2 Prompt": (
+                    "Show a completed change request relating to a service/product delivered, including status and approvals."
+                )
+            }
+        ],
+        "8.6": [
+            {
+                "Document Name": "Final Inspection Report",
+                "Document Number": "F-30",
+                "Guidance/Description": "Final inspection record for product/service before release.",
+                "Document Owner": "Quality Inspector",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show at least one signed final inspection report for a product or service delivered to a client relevant to your scope."
+                )
+            }
+        ],
+        "8.7": [
+            {
+                "Document Name": "Procedure for Management of Non-Conformities and Corrective Actions",
+                "Document Number": "P-16",
+                "Guidance/Description": "Procedure to identify, control, and correct nonconforming outputs.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide records/log for 2-3 nonconforming outputs, including actions taken and follow-up verification."
+                )
+            },
+            {
+                "Document Name": "Registry and Status Nonconformities and Corrective Actions",
+                "Document Number": "F-31",
+                "Guidance/Description": "Log/register of nonconformities, corrections, and status.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Show the registry for the last year with two sample entries, their closure or current status, including evidence for action."
+                )
+            }
+        ],
+        "9.1": [
+            {
+                "Document Name": "Procedure for Monitoring & Measurement",
+                "Document Number": "P-17",
+                "Guidance/Description": "Defines how IMS performance is measured, analyzed, and evaluated.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show monitoring/measurement plan, filled records, and summaries/results for the last quarter."
+                )
+            }
+        ],
+        "9.1.1": [
+            {
+                "Document Name": "Procedure for Compliance Management",
+                "Document Number": "P-18",
+                "Guidance/Description": "Procedure for evaluation and management of compliance obligations.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide compliance monitoring records, audits, or status reports showing periodic review."
+                )
+            }
+        ],
+        "9.1.2": [
+            {
+                "Document Name": "Procedure for Identification for Legal Requirements",
+                "Document Number": "P-19",
+                "Guidance/Description": "Describes how legal and other requirements are identified and complied with.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show a recent update or review record for legal requirements, with one example of a regulatory change tracked and addressed."
+                )
+            },
+            {
+                "Document Name": "List of all legal documents and legal requirements",
+                "Document Number": "F-11",
+                "Guidance/Description": "Up-to-date register of all relevant legal requirements.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide a copy of the legal register and highlight the learning/action taken on a new requirement in the last 6 months."
+                )
+            }
+        ],
+        "9.1.3": [
+            {
+                "Document Name": "Data Analysis Record",
+                "Document Number": "F-03",
+                "Guidance/Description": "Record and analysis/results of monitored data for continual improvement.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show a sample analysis record and explain the actions decided based on this data analysis."
+                )
+            }
+        ],
+        "9.2": [
+            {
+                "Document Name": "Procedure for Internal Audit",
+                "Document Number": "F-04",
+                "Guidance/Description": "Describes how internal audits are planned, conducted, and followed up.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide the last two internal audit reports, including audit program and corrections for non-conformities identified."
+                )
+            },
+            {
+                "Document Name": "Internal Audit Program",
+                "Document Number": "F-32",
+                "Guidance/Description": "Schedule/calendar of planned internal audits.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current annual audit program including areas covered and assigned auditors."
+                )
+            },
+            {
+                "Document Name": "Internal Audit Schedule",
+                "Document Number": "F-33",
+                "Guidance/Description": "Detailed audit timetable and auditor assignments.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show the detailed schedule and confirmation/audit notifications sent."
+                )
+            },
+            {
+                "Document Name": "Internal Audit Report",
+                "Document Number": "F-34",
+                "Guidance/Description": "Completed report with findings, recommendations, and corrective action.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide a recent audit report, and summarize 2-3 nonconformities found, including their closure status and responsible persons."
+                )
+            }
+        ],
+        "9.3": [
+            {
+                "Document Name": "Procedure for Management Review",
+                "Document Number": "P-20",
+                "Guidance/Description": "Defines the management review process and requirements.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show management review schedule, agenda, and minutes for the most recent meeting, including actions and persons responsible."
+                )
+            },
+            {
+                "Document Name": "Management Review Minutes",
+                "Document Number": "F-35",
+                "Guidance/Description": "Signed minutes from management review meetings.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide the last approved minutes and highlight key outputs, decisions, and assigned actions."
+                )
+            }
+        ],
+        "10.2": [
+            {
+                "Document Name": "Procedure for Management of Non-Conformities and Corrective Actions",
+                "Document Number": "P-21",
+                "Guidance/Description": "Details how non-conformities are corrected and actions tracked.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide evidence of at least two corrective actions still in progress, along with their status, owner, and planned closure date."
+                )
+            },
+            {
+                "Document Name": "Registry and Status Nonconformities and Corrective Actions",
+                "Document Number": "F-36",
+                "Guidance/Description": "Register/log showing status of all non-conformities and corrective actions.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show registry with status updates and details for at least two nonconformities (open and closed)."
+                )
+            },
+            {
+                "Document Name": "Non Conformity Report",
+                "Document Number": "F-37",
+                "Guidance/Description": "Detailed report evidencing closure and verification for each nonconformity.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide a sample nonconformity closure report, including root cause, corrections, actions, and verification."
+                )
+            }
+        ],
+        "10.3": [
+            {
+                "Document Name": "Management Review Minutes",
+                "Document Number": "F-35",
+                "Guidance/Description": "Signed minutes, including continual improvement review and actions.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show evidence that continual improvement is reviewed and driven through management review (e.g., improvement actions and tracking)."
+                )
+            },
+            {
+                "Document Name": "Non Conformity Report",
+                "Document Number": "F-37",
+                "Guidance/Description": "Evidence that continual improvement is achieved through corrective actions.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Submit an example where a nonconformity or suggestion led to a documented improvement of the management system or process."
+                )
+            }
+        ]
+        # ...expand for remaining clauses as needed...
+    }
+
+
+    patterns = [
+        ("ims_org",   "Org initials + IMS (XXX-IMS-...)",           pattern_1),
+        ("ims_only",  "IMS only (IMS-...)",                         pattern_2),
+        ("qhse",      "QHSE system (QHSE-...)",                     pattern_3),
+        ("minimal",   "Minimal prefix (MAN-01, P-01, etc.)",        pattern_4),
+    ]
+    if forced_pattern_name is not None:
+        for pn, pd, cm in patterns:
+            if pn == forced_pattern_name:
+                pattern_name, pattern_desc, clause_map = pn, pd, cm
+                break
+        else:
+            pattern_name, pattern_desc, clause_map = patterns[0]
+    else:
+        pattern_name, pattern_desc, clause_map = random.choice(patterns)
+
+    # Generate full markdown table including all columns
+    lines = [
+        "| Clause | Document Name | Document Number | Guidance/Description | Document Owner | Approved By | Stage 2 Prompt |",
+        "|--------|---------------|----------------|----------------------|---------------|-------------|----------------|"
+    ]
+    for clause, docs in clause_map.items():
+        for doc in docs:
+            lines.append(
+                f"| {clause} | {doc['Document Name']} | {doc['Document Number']} | "
+                f"{doc.get('Guidance/Description', '')} | {doc.get('Document Owner', '')} | "
+                f"{doc.get('Approved By', '')} | {doc.get('Stage 2 Prompt', '')} |"
+            )
+    prompt_table = "\n".join(lines)
+
+    return pattern_name, pattern_desc, clause_map, prompt_table
+
+
+
+
+# =========================== ISO:9001 STAGE 1 FUNCTIONS START HERE ===================================================================
+
+
+def build_observation_section(updated_rows):
+    obs_lines = []
+    for row in updated_rows:
+        if row.get("C/NC/O", "").strip().upper() == "O":
+            clause_no = row.get("Cl. NO", "").strip()
+            detail = row.get("Document Verification detail with statement of Conformity", "").strip()
+            obs_lines.append(f"Clause {clause_no}: {detail}\n")
+    return "\n".join(obs_lines) if obs_lines else "No observations found."
+
+def insert_audit_sections(patched_buffer, nc_text, obs_text):
+    patched_buffer.seek(0)
+    doc = Document(patched_buffer)
+    # Non-Conformities
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                if "Non-Conformities Raised" in cell.text:
+                    cell.text = "Non-Conformities Raised:\n\n" + nc_text
+    # Observations/SUMMARY
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                if "SUMMARY (including general observations/comments" in cell.text or "SUMMARY" in cell.text:
+                    cell.text = "SUMMARY (including general observations/comments-Separate Sheet can be used):\n\n" + obs_text
+    patched_buffer.seek(0)
+    patched_buffer.truncate(0)
+    doc.save(patched_buffer)
+    patched_buffer.seek(0)
+    return patched_buffer
+
+def patch_docx_by_row_index(docx_buffer, audit_rows):
+    docx_buffer.seek(0)
+    doc = Document(docx_buffer)
+    table = doc.tables[3]   # <-- THE CRITICAL FIX
+    data_start_idx = 2      # still 2 header rows
+    n_rows = min(len(audit_rows), len(table.rows) - data_start_idx)
+    for i in range(n_rows):
+        arow = audit_rows[i]
+        trow = table.rows[i + data_start_idx]
+        if len(trow.cells) < 4:
+            print(f"Row {data_start_idx + i} has too few cells!")
+            continue
+        trow.cells[0].text = str(arow.get("Cl. NO", ""))
+        trow.cells[1].text = str(arow.get("Description", ""))
+        trow.cells[2].text = str(arow.get("C/NC/O", ""))
+        trow.cells[3].text = str(arow.get("Document Verification detail with statement of Conformity", ""))
+    docx_buffer.seek(0)
+    docx_buffer.truncate(0)
+    doc.save(docx_buffer)
+    docx_buffer.seek(0)
+    return docx_buffer
+
+def mistral_response_to_updated_rows(raw):
+    import json, re
+    if isinstance(raw, str):
+        raw = json.loads(raw)
+    codeblock = raw.get("response", "")
+    json_str = re.sub(r'^`{3}json\s*|\s*`{3}$', '', codeblock.strip())
+    return json.loads(json_str)
+
+def patch_docx_buffer_with_na(docx_buffer, clause_status_dict):
+    docx_buffer.seek(0)
+    doc = Document(docx_buffer)
+    for table in doc.tables:
+        first_row = [cell.text.strip() for cell in table.rows[0].cells]
+        if "Clause & Description" in first_row:
+            cl_no_idx = 0
+            desc_idx = 1
+            status_idx = 3  # Update if needed!
+            for row in table.rows[2:]:
+                cl_no = row.cells[cl_no_idx].text.strip()
+                desc = row.cells[desc_idx].text.strip()
+                clause_key = f"{cl_no} - {desc}" if cl_no and desc else cl_no or desc
+                if clause_key in clause_status_dict:
+                    row.cells[status_idx].text = clause_status_dict[clause_key]
+            break
+    docx_buffer.seek(0)
+    docx_buffer.truncate(0)
+    doc.save(docx_buffer)
+    docx_buffer.seek(0)
+
+def mark_na_clauses(extracted_data, na_clauses):
+    """
+    For each clause key in extracted_data that matches any string in na_clauses (exact match),
+    set its value (evidence) to 'NA'.
+
+    - extracted_data: dict of {clause-key: evidence}
+    - na_clauses: list of clause-keys to mark NA
+    """
+    if not na_clauses:
+        return extracted_data
+    normalized = set(c.strip() for c in na_clauses)
+    for key in extracted_data:
+        if key.strip() in normalized:
+            extracted_data[key] = "NA"
+    return extracted_data
+
+def patch_docx_from_rows(docx_buffer, rows):
+    # Robust key access for any LLM-drifted keys
+    def keyval(row, *candidates):
+        for k in candidates:
+            if k in row:
+                return row[k]
+        # Debug print for missing keys:
+        print("Row missing expected keys! Actual keys present:", list(row.keys()))
+        print("Row content:", row)
+        raise KeyError(f"Row missing keys {candidates}")
+
+    key_to_cnc = {
+        (
+            keyval(row, "Cl. NO", "Cl. NO.", "Clause No", "Clause No."),
+            keyval(row, "Description", "description")
+        ): keyval(row, "C/NC/O", "CNC/O", "Status", "status")
+        for row in rows
+    }
+
+    docx_buffer.seek(0)
+    doc = Document(docx_buffer)
+    for table in doc.tables:
+        if len(table.rows) < 2:
+            continue
+        header_row_1 = [cell.text.strip() for cell in table.rows[0].cells]
+        header_row_2 = [cell.text.strip() for cell in table.rows[1].cells]
+        if "Clause & Description" in header_row_1:
+            cl_no_idx = header_row_2.index("Cl. NO")
+            desc_idx = header_row_2.index("Description")
+            cnc_idx = None
+            for idx, val in enumerate(header_row_2):
+                if val in ["C/NC/O", "C / NC / O", "Status"]:
+                    cnc_idx = idx
+                    break
+            if cnc_idx is None: cnc_idx = 2  # Default/fallback
+            for row in table.rows[2:]:
+                cl_no = row.cells[cl_no_idx].text.strip()
+                desc = row.cells[desc_idx].text.strip()
+                key = (cl_no, desc)
+                if key in key_to_cnc:
+                    row.cells[cnc_idx].text = key_to_cnc[key]
+            break
+    docx_buffer.seek(0)
+    docx_buffer.truncate(0)
+    doc.save(docx_buffer)
+    docx_buffer.seek(0)
+    return docx_buffer
+
+
+
+
+
+# =========================== ISO:9001 STAGE 1 FUNCTIONS END HERE ===================================================================
+
+
+async def add_org_brief_to_docx_iso9001_14001(
+    docx_buffer,
+    company_name,
+    scope,
+    mistral_url="https://mistral-api-v2.onrender.com/api/mistral"
+):
+    """
+    Calls Mistral for an organization brief and inserts it into the IMS (ISO 9001+14001) DOCX stage 1 cell.
+    Only the actual business/activities brief will appear (no JSON, no standards mention).
+    """
+    # 1. Strict, ISO-agnostic prompt
+    brief_prompt = f"""
+You are writing the opening organization summary for an IMS (ISO 9001/14001) Stage 1 audit report.
+
+Based ONLY on the following company name and scope, write a concise, professional 2–3 sentence overview of this organization's main activities, products/services, and business focus.
+
+DO NOT mention ISO, certifications, standards, quality/environmental compliance, or audit processes in any form.
+
+- Company Name: {company_name}
+- IMS Scope: {scope}
+
+Output ONLY the brief text itself — do NOT include code block formatting, preface, or output as JSON. Output only the brief.
+    """
+
+    # 2. Call Mistral API
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        api_response = await client.post(
+            mistral_url,
+            json={"prompt": brief_prompt},
+            headers={"Content-Type": "application/json"}
+        )
+        api_response.raise_for_status()
+        if api_response.headers.get("content-type", "").startswith("application/json"):
+            result = api_response.json()
+            brief_string = result.get("response", "") or str(result)
+        else:
+            brief_string = api_response.text
+    brief_string = brief_string.strip()
+
+    # 3. Robust extraction from all weird result formats
+    for key in ("brief", "overview"):
+        try:
+            obj = json.loads(brief_string)
+            if isinstance(obj, dict) and key in obj:
+                brief_string = obj[key]
+                break
+        except Exception:
+            pass
+    # Remove any lingering codeblock or non-text artifacts:
+    if brief_string.startswith("``````"):
+        brief_string = brief_string.strip("`").strip()
+    # Defensive: remove any lines about ISO or "standard"
+    import re
+    brief_string = "\n".join([
+        line for line in brief_string.splitlines()
+        if not re.search(r'(ISO ?9|ISO ?1|14001|certifi|standard|compliance)', line, re.I)
+    ]).strip()
+
+    # 4. Insert into DOCX
+    docx_buffer.seek(0)
+    doc = Document(docx_buffer)
+    written = False
+    for table in doc.tables:
+        for row in table.rows:
+            cells = [cell.text for cell in row.cells]
+            for idx, cell in enumerate(row.cells):
+                if ("Brief about the organization" in cell.text) or ("Organization Brief" in cell.text):
+                    # Insert into next cell (second column)
+                    if idx + 1 < len(row.cells):
+                        row.cells[idx + 1].text = brief_string
+                        written = True
+                    else:
+                        cell.text = "Brief about the organization:\n\n" + brief_string
+                        written = True
+    if not written:
+        print("⚠️ Could not find 'Brief about the organization' cell in the DOCX.")
+    docx_buffer.seek(0)
+    docx_buffer.truncate(0)
+    doc.save(docx_buffer)
+    docx_buffer.seek(0)
+    return docx_buffer
+
+def extract_stage1_audit_clause_table(docx_path_or_stream):
+    from docx import Document
+
+    doc = Document(docx_path_or_stream)
+    data = []
+
+    # Keywords for header identification
+    cl_no_headers = ["cl. no", "cl.", "clause"]
+    desc_headers = ["description"]
+    cnco_headers = ["c/nc/o"]
+    verification_headers = ["document verification", "statement", "document verification detail", "statement of conformity"]
+
+    # Scan tables to find the correct clause verification table
+    for table in doc.tables:
+        header_row_idx, cl_idx, desc_idx, cnco_idx, ver_idx = -1, -1, -1, -1, -1
+
+        # Flexible header detection within first few rows
+        candidate_headers = []
+        scan_rows = min(3, len(table.rows))
+        for i in range(scan_rows):
+            row = table.rows[i]
+            candidate_headers.append([cell.text.strip().lower() for cell in row.cells])
+        for i, texts in enumerate(candidate_headers):
+            for j, t in enumerate(texts):
+                if any(h in t for h in cl_no_headers):
+                    cl_idx = j
+                if any(h in t for h in desc_headers):
+                    desc_idx = j
+                if any(h in t for h in cnco_headers):
+                    cnco_idx = j
+                if any(h in t for h in verification_headers):
+                    ver_idx = j
+            if cl_idx != -1 and desc_idx != -1 and cnco_idx != -1 and ver_idx != -1:
+                header_row_idx = i
+                break
+
+        if header_row_idx == -1:
+            continue  # Not the target table
+
+        # Section handling (ignored in output)
+        section = ""
+        for row in table.rows[header_row_idx + 1:]:
+            texts = [cell.text.strip() for cell in row.cells]
+            # Detect section header: all cells have identical non-empty content
+            if texts and len(set(texts)) == 1 and texts[0]:
+                section = texts[0]
+                continue
+            # Skip repeated header rows
+            if any(h in texts[cl_idx].lower() for h in cl_no_headers):
+                continue
+            # Skip trailing notes/organization-specific addenda
+            if not texts[cl_idx] or (desc_idx < len(texts) and "other client organization-specific" in texts[desc_idx].lower() and not texts[cl_idx]):
+                continue
+            # Only process real clause rows
+            if texts[cl_idx]:
+                data.append({
+                    "Cl. No": texts[cl_idx],
+                    "Description": texts[desc_idx],
+                    "C/NC/O": texts[cnco_idx],
+                    "Document Verification detail with statement of Conformity": texts[ver_idx],
+                })
+        break  # Stop at first matching table
+
+    # Final: filter out residual blank, trailing note, or non-clause rows
+    return [
+        row for row in data
+        if row["Cl. No"].strip() != '' and not row["Cl. No"].lower().startswith("other client organization-specific")
+    ]
+
+def update_cnc_placeholders_stage1(rows):
+    """
+    Updates the 'C/NC/O' field in each row of the audit clause table as per stage-1 rules:
+    - If 'C/NC/O' is blank or set as '{{clause}}' (case-insensitive, with or without spaces),
+      and 'Document Verification detail with statement of Conformity' is not 'NA',
+      assigns statuses as follows:
+        - 2 randomly chosen as 'NC'
+        - 10% (rounded up; minimum 1 if total >= 1) as 'O'
+        - The remainder as 'C'
+    - If 'Document Verification...statement of Conformity' is 'NA', leaves 'C/NC/O' blank.
+    """
+    def is_placeholder(val):
+        if val is None:
+            return True
+        text = str(val).strip().lower().replace(" ", "")
+        return text == "" or text == "{{clause}}"
+
+    key_cnc = "C/NC/O"
+    key_evidence = "Document Verification detail with statement of Conformity"
+
+    # Identify rows that need updating
+    indices_to_fill = [
+        idx for idx, row in enumerate(rows)
+        if is_placeholder(row.get(key_cnc))
+        and row.get(key_evidence, "").strip().lower() != "na"
+    ]
+
+    total = len(indices_to_fill)
+    if total == 0:
+        return rows
+
+    # Calculate how many of each status to assign
+    nc_count = min(2, total)
+    remaining = total - nc_count
+    o_count = max(1, math.ceil(0.1 * total)) if remaining > 0 else 0
+    o_count = min(o_count, remaining)
+    c_count = remaining - o_count if remaining > 0 else 0
+
+    replacements = (["NC"] * nc_count) + (["O"] * o_count) + (["C"] * c_count)
+    random.shuffle(replacements)
+
+    # Assign the distributed labels
+    for i, idx in enumerate(indices_to_fill):
+        rows[idx][key_cnc] = replacements[i]
+
+    # Blank 'C/NC/O' where evidence is 'NA'
+    for row in rows:
+        if row.get(key_evidence, "").strip().lower() == "na":
+            row[key_cnc] = ""
+
+    return rows
+
+def choose_document_pattern_stage1(forced_pattern_name=None):
+    """
+    Randomly select one document-numbering pattern for ISO audit document references.
+    Returns:
+        pattern_name: 'ims_org', 'ims_only', 'qhse', or 'minimal'
+        pattern_description: human-readable summary
+        clause_map: dict mapping clause -> list of dicts with 'Document Name', 'Document Number'
+        prompt_table: Markdown table as string for prompt
+    """
+    # --- Pattern definitions (expand for all clauses as needed) ---
+    # Pattern 1: Org initials + IMS, e.g. XXX-IMS-F-01
+    pattern_1 = {
+        "4.1": [
+            {
+                "Document Name": "Integrated Management System Manual",
+                "Document Number": "XXX-IMS-MAN-01",
+                "Guidance/Description": "Describes the organization's integrated management system and its context.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide evidence (meeting records, management review, implementation plans) that context of the organization is identified and considered in operational activities. Show how external and internal issues are reviewed and acted on."
+                )
+            },
+            {
+                "Document Name": "SWOT Analysis",
+                "Document Number": "XXX-IMS-F-01",
+                "Guidance/Description": "Identifies strengths, weaknesses, opportunities, and threats.",
+                "Document Owner": "Process Owner",
+                "Approved By": "Top Management",
+                "Stage 2 Prompt": (
+                    "Provide a completed SWOT analysis form and describe how results influence actions, with a concrete example of a weakness or opportunity addressed."
+                )
+            },
+            {
+                "Document Name": "Context of Organization",
+                "Document Number": "XXX-IMS-F-02",
+                "Guidance/Description": "Defines external and internal issues relevant to organizational purpose and QMS.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show the documented issues and explain, with examples, where any of these have prompted operational or policy changes."
+                )
+            },
+        ],
+        "4.2": [
+            {
+                "Document Name": "Procedure for Determining Context and Interested Parties",
+                "Document Number": "XXX-IMS-P-01",
+                "Guidance/Description": "Process for identifying interested parties and their relevant needs and expectations.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Describe and show evidence that the organization has identified all relevant interested parties and determined their needs and expectations. List at least 4-5 actual interested parties (e.g., customers, regulators, staff, suppliers, contractors) and specific expectations for each. Show how this information is integrated into your management system."
+                )
+            },
+            {
+                "Document Name": "List of Interested Parties",
+                "Document Number": "XXX-IMS-F-03",
+                "Guidance/Description": "Lists internal and external interested parties with their needs.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current interested parties list, and for 4-5 entries, show evidence that their expectations are tracked and acted on, such as communications, meeting minutes, or actions taken."
+                )
+            }
+        ],
+        "4.3": [
+            {
+                "Document Name": "Scope of the Quality management system",
+                "Document Number": "General Description",
+                "Guidance/Description": "Defines the boundaries and applicability of the management system.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide the documented scope and give real examples showing what is included and excluded; e.g., reference specific departments, locations, or processes."
+                )
+            }
+        ],
+        "4.4": [
+            {
+                "Document Name": "Process Interaction Chart",
+                "Document Number": "XXX-IMS-PIC-01",
+                "Guidance/Description": "A diagram showing process interactions and interfaces.",
+                "Document Owner": "Process Owner",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show the process map/chart and explain with evidence (e.g., training records, cross-functional meetings) how these interactions are communicated and implemented."
+                )
+            },
+            {
+                "Document Name": "List of All procedures",
+                "Document Number": "XXX-IMS-F-04",
+                "Guidance/Description": "Comprehensive inventory of all active management system procedures.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current version of the procedures list and a tracked change showing a recent update or addition."
+                )
+            }
+        ],
+        "5.1": [
+            {
+                "Document Name": "Leadership-general",
+                "Document Number": "General Description",
+                "Guidance/Description": "Describes top management’s leadership approach in the QMS.",
+                "Document Owner": "Managing Director",
+                "Approved By": "Board",
+                "Stage 2 Prompt": (
+                    "Give examples of leadership in action (e.g., signed policies, management review participation, communication records) showing how top management demonstrates commitment."
+                )
+            },
+            {
+                "Document Name": "Customer Focus",
+                "Document Number": "XXX-POL-02",
+                "Guidance/Description": "Policy for customer focus, satisfaction, and requirements.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide evidence (customer feedback reviews, complaint logs, actions taken) that customer focus is implemented and monitored."
+                )
+            },
+        ],
+        "5.2": [
+            {
+                "Document Name": "Quality, Environment, Health & Safety Policy",
+                "Document Number": "XXX-POL-02",
+                "Guidance/Description": "Signed and communicated QHSE policy document.",
+                "Document Owner": "Managing Director",
+                "Approved By": "Board",
+                "Stage 2 Prompt": (
+                    "Provide the current signed QHSE policy; show evidence of how it is communicated and understood at relevant functions and levels."
+                )
+            }
+        ],
+        "5.3": [
+            {
+                "Document Name": "Procedure for Roles, Responsibilities & Authorities",
+                "Document Number": "XXX-IMS-P-02",
+                "Guidance/Description": "Defines functional roles, responsibilities, authorities.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide responsibility matrix or job descriptions and show evidence they are followed (e.g. signed documents, role-based process assignments)."
+                )
+            }
+        ],
+        "5.4": [
+            {
+                "Document Name": "Procedure for Consultation and participation of Workers",
+                "Document Number": "XXX-IMS-P-03",
+                "Guidance/Description": "Process for involving employees in decisions affecting QHSE.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Present meeting minutes, suggestion system outputs, or other records showing worker involvement in QMS/EMS/OHSMS activities."
+                )
+            }
+        ],
+        "6.1.1": [
+            {
+                "Document Name": "Procedure for Addressing Risk and Opportunity",
+                "Document Number": "XXX-IMS-P-04",
+                "Guidance/Description": "Documents risk and opportunity assessment and handling.",
+                "Document Owner": "Risk Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show risk register(s) and evidence that risks/opportunities are regularly identified, assessed, and acted on (e.g., risk reviews, controls implemented)."
+                )
+            },
+            {
+                "Document Name": "Registry of Key Risks & opportunities",
+                "Document Number": "XXX-IMS-F-08",
+                "Guidance/Description": "Record of identified risks and opportunities.",
+                "Document Owner": "Risk Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current registry and examples of actions taken on identified risks/opportunities."
+                )
+            },
+        ],
+        "6.1.2": [
+            {
+                "Document Name": "Procedure for Environmental Impact Assessment",
+                "Document Number": "XXX-IMS-P-05",
+                "Guidance/Description": "How to identify and manage environmental aspects and impacts.",
+                "Document Owner": "EHS Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide a completed impact assessment, and show how significant impacts are managed in your daily/operational practices."
+                )
+            },
+            {
+                "Document Name": "Procedure for Hazard Identification",
+                "Document Number": "XXX-IMS-P-06",
+                "Guidance/Description": "Process for hazard identification and risk evaluation.",
+                "Document Owner": "Safety Officer",
+                "Approved By": "EHS Manager",
+                "Stage 2 Prompt": (
+                    "Show a record of identified hazards and evidence of implemented controls or corrective actions."
+                )
+            },
+            {
+                "Document Name": "Record of Environmental Aspect and Impact Analysis",
+                "Document Number": "XXX-IMS-F-09",
+                "Guidance/Description": "Filled record of aspects and impact analyses.",
+                "Document Owner": "EHS Manager",
+                "Approved By": "Top Management",
+                "Stage 2 Prompt": (
+                    "Show the current filled record and evidence that it's regularly reviewed and updated."
+                )
+            },
+            {
+                "Document Name": "Records of Hazard Analysis and Risk Treatement",
+                "Document Number": "XXX-IMS-F-10",
+                "Guidance/Description": "Actual hazard analysis and risk treatment records.",
+                "Document Owner": "Safety Officer",
+                "Approved By": "EHS Manager",
+                "Stage 2 Prompt": (
+                    "Present completed forms with evidence of actions taken as a result (e.g. mitigation implemented)."
+                )
+            }
+        ],
+        "6.1.3": [
+            {
+                "Document Name": "Procedure for identification for legal requirements",
+                "Document Number": "XXX-IMS-P-07",
+                "Guidance/Description": "Process to identify, access and comply with legal/other requirements.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show the process for legal requirement identification, and current legal register. Give an example of recent new/changed requirement tracked and acted on."
+                )
+            },
+            {
+                "Document Name": "List of all legal documents and legal requirements",
+                "Document Number": "XXX-IMS-F-11",
+                "Guidance/Description": "Register of legal/other compliance requirements.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide an up-to-date legal register and show evidence of ongoing review/updates."
+                )
+            }
+        ],
+        "6.2": [
+            {
+                "Document Name": "Quality & HSE Objectives, Quality & HSE objective monitoring sheets, Results of the Quality Objectives",
+                "Document Number": "XXX-IMS-OBJ-01",
+                "Guidance/Description": "Records QHSE objectives, plans, performance indicators.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide current QHSE objectives, records of performance vs objectives, and evidence of action when objectives are not achieved."
+                )
+            },
+            {
+                "Document Name": "Objective Monitoring Action Plan and Results of Monitored Data",
+                "Document Number": "XXX-IMS-F-12",
+                "Guidance/Description": "Filled records of objective monitoring/action plans.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Top Management",
+                "Stage 2 Prompt": (
+                    "Show filled action plans and monitoring records, and describe a real corrective action triggered following a missed target."
+                )
+            }
+        ],
+        "7.1": [
+            {
+                "Document Name": "List of Machinery, List of Computers, List of Assets, List of equipments",
+                "Document Number": "XXX-IMS-F-13",
+                "Guidance/Description": "Inventory of major assets and machinery.",
+                "Document Owner": "Asset Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current asset list and evidence it's maintained and updated regularly; provide an example of how maintenance is scheduled using the list."
+                )
+            },
+            {
+                "Document Name": "Annual maintainance plan and calibration plan for machines and equipments",
+                "Document Number": "XXX-IMS-F-42",
+                "Guidance/Description": "Schedules and records for maintenance/calibration.",
+                "Document Owner": "Maintenance Supervisor",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Show this year's plan and proof that maintenance and calibration are performed as scheduled (e.g., completed checklists, certificates)."
+                )
+            }
+        ],
+        "7.2": [
+            {
+                "Document Name": "Procedure for Training & Competenacy",
+                "Document Number": "XXX-IMS-P-08",
+                "Guidance/Description": "How to manage and verify employee competency.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show training and competence procedure and evidence (training records, competence evaluations) that personnel are competent for roles assigned."
+                )
+            },
+            {
+                "Document Name": "Competence Matrix",
+                "Document Number": "XXX-IMS-F-14",
+                "Guidance/Description": "Matrix of staff roles, competencies, qualification status.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show the current competence matrix and evidence that gaps are tracked and closed with actual data from the past year."
+                )
+            },
+            {
+                "Document Name": "Annual training Calendar",
+                "Document Number": "XXX-IMS-F-15",
+                "Guidance/Description": "Planned training events for the year.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide recent annual training plan and proof of completed sessions."
+                )
+            },
+            {
+                "Document Name": "Effecetiveness of Training Provided",
+                "Document Number": "XXX-IMS-F-16",
+                "Guidance/Description": "Evaluation of training effectiveness.",
+                "Document Owner": "Training Coordinator",
+                "Approved By": "HR Manager",
+                "Stage 2 Prompt": (
+                    "Present completed effectiveness evaluations and corrective actions taken if training outcomes were not met."
+                )
+            },
+            {
+                "Document Name": "Annual Training Records",
+                "Document Number": "XXX-IMS-F-17",
+                "Guidance/Description": "Records of all training carried out in the year.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show signed training attendance records and certificates for at least 4 different trainings."
+                )
+            },
+            {
+                "Document Name": "Competence Evaluation",
+                "Document Number": "XXX-IMS-F-18",
+                "Guidance/Description": "Evaluation records for individual competence.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "HR Manager",
+                "Stage 2 Prompt": (
+                    "Submit actual filled-in evaluation forms and show how incompetence is identified and corrected."
+                )
+            }
+        ],
+        "7.3": [
+            {
+                "Document Name": "Integrated Management System Manual",
+                "Document Number": "XXX-IMS-MAN-01",
+                "Guidance/Description": "Manual describing the organization's IMS.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show physical/digital copies of the manual and evidence that staff have access and reference it in work."
+                )
+            }
+        ],
+        "7.4": [
+            {
+                "Document Name": "Integrated Management System Manual",
+                "Document Number": "XXX-IMS-MAN-01",
+                "Guidance/Description": "Manual includes communication procedures.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Explain how communication requirements from the manual are followed in practice; provide communications sent using the guidance."
+                )
+            },
+            {
+                "Document Name": "Procedure for Internal and External Communication",
+                "Document Number": "XXX-IMS-P-09",
+                "Guidance/Description": "How the organization manages its internal/external communications.",
+                "Document Owner": "Communications Coordinator",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show an example of actual internal and external communication regarding QMS (e.g. safety alerts, customer letters)."
+                )
+            }
+        ],
+        "7.5": [
+            {
+                "Document Name": "Procedure for Document and Record Control",
+                "Document Number": "XXX-IMS-P-09",
+                "Guidance/Description": "Document control process explained.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show a controlled document with revision history, and evidence that obsolete versions are removed from use."
+                )
+            },
+            {
+                "Document Name": "Master List of Documents",
+                "Document Number": "XXX-IMS-F-04",
+                "Guidance/Description": "List of all controlled documents.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current master list, mark controlled/uncontrolled copies, and show an example of a document recently added or revised."
+                )
+            },
+            {
+                "Document Name": "List of External Origin Documents",
+                "Document Number": "XXX-IMS-F-19",
+                "Guidance/Description": "Documents controlled that come from outside the organization.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide examples showing external documents tracked and updated—e.g., a regulation update tracked in the system."
+                )
+            },
+            {
+                "Document Name": "Documents Change Request Form",
+                "Document Number": "XXX-IMS-F-20",
+                "Guidance/Description": "Form for requesting changes to documents.",
+                "Document Owner": "All Staff",
+                "Approved By": "Document Control Coordinator",
+                "Stage 2 Prompt": (
+                    "Provide one completed change request form and show how requests are logged and tracked."
+                )
+            }
+        ],
+        "8.1": [
+            {
+                "Document Name": "Master List of Operational Procedures",
+                "Document Number": "XXX-IMS-F-04",
+                "Guidance/Description": "Write a prompt to list of core operation procedures as per the scope.",
+                "Document Owner": "",
+                # Not directly specified; usually Operations Manager or Process Owner – fill as per your org chart
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "List all core operational procedures maintained under the IMS, as per your organization's scope. Show how these procedures are controlled and regularly reviewed."
+                )
+            },
+            {
+                "Document Name": "Change management Form",
+                "Document Number": "XXX-IMS-F-21",
+                "Guidance/Description": "Change management documentation related to operational processes.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show completed change management forms reflecting changes in any operational procedure or process over the last year."
+                )
+            },
+            {
+                "Document Name": "Records of Hazard Analysis and Risk Treatement",
+                "Document Number": "XXX-IMS-F-10",
+                "Guidance/Description": "Write a prompt about the hazard analysis and risk treatment identified for each operational procedure.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Provide filled records of hazard analysis and risk treatment performed for major operational activities. Give an example illustrating how results from these records led to implemented controls."
+                )
+            }
+        ],
+        "8.2": [
+            {
+                "Document Name": "Master List of Operational Procedures",
+                "Document Number": "XXX-IMS-F-04",
+                "Guidance/Description": "Write a prompt to list of core operation procedures as per the scope.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show the master list of operational procedures with reference to customer requirements. Provide a sample showing the trace from customer requirements to documented procedures."
+                )
+            },
+            {
+                "Document Name": "Procedure for Emergency Preparedness",
+                "Document Number": "XXX-IMS-P-10",
+                "Guidance/Description": "Write a prompt that emergency evacuation plan verified and found evident.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show your current emergency preparedness procedure. Provide evidence (e.g., evacuation drill records) that the plan is tested and known by staff."
+                )
+            }
+        ],
+        "8.3": [
+            {
+                "Document Name": "Procedure for Identification of Design Input & Output of the product and services",
+                "Document Number": "XXX-IMS-P-11",
+                "Guidance/Description": "Write a prompt that design & development prompt verified (create a sample of any product or service delivered to any client as per the scope).",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show a sample of design & development documentation for a product or service as per your organization’s scope. Include input/output records and version control."
+                )
+            },
+            {
+                "Document Name": "Design Review and Approval Sheet",
+                "Document Number": "XXX-IMS-F-22",
+                "Guidance/Description": "Write a prompt that design review and approval verified (create a sample of any product or service delivered to any client as per the scope).",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Provide a completed design review and approval sheet for a recent project, showing signatures/approvals and identified issues."
+                )
+            },
+            {
+                "Document Name": "Design Progess Sheet",
+                "Document Number": "XXX-IMS-F-23",
+                "Guidance/Description": "Write a prompt that design process flow verified (create a sample of any product or service delivered to any client as per the scope).",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Present a filled-in design process flow/progress sheet documenting key stages, milestones, and change management actions for a selected design project."
+                )
+            }
+        ],
+        "8.4": [
+            {
+                "Document Name": "Procedure for Selection & Evaluation of Vendors",
+                "Document Number": "XXX-IMS-P-12",
+                "Guidance/Description": "Describes selection, approval, and evaluation of suppliers.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide supplier evaluation records showing at least two vendors evaluated with outcomes. Include criteria used for assessment and ongoing monitoring actions."
+                )
+            },
+            {
+                "Document Name": "Procedure for Purchasing Management",
+                "Document Number": "XXX-IMS-P-13",
+                "Guidance/Description": "Defines the purchasing process and controls.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show sample purchase orders and evidence of implementation of purchasing procedures, including approval and verification steps."
+                )
+            },
+            {
+                "Document Name": "Vendor and Sub Contractor Registration Form",
+                "Document Number": "XXX-IMS-F-24",
+                "Guidance/Description": "Form used for registering new vendors/subcontractors.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide a completed registration form for a sample supplier, noting evaluation and approval process."
+                )
+            },
+            {
+                "Document Name": "List of Approved Vendors and Sub Contractors",
+                "Document Number": "XXX-IMS-F-25",
+                "Guidance/Description": "Current list of all approved suppliers and subcontractors.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the list with at least two example suppliers, including approval status and date of last evaluation."
+                )
+            },
+            {
+                "Document Name": "Vendor Registration Form",
+                "Document Number": "XXX-IMS-F-26",
+                "Guidance/Description": "Form evidencing vendor registration and approval.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show a completed and signed registration form for a vendor from the current year."
+                )
+            }
+        ],
+        "8.5.1": [
+            {
+                "Document Name": "Procedure for Service/Production/Contract",
+                "Document Number": "XXX-IMS-P-14",
+                "Guidance/Description": "Describes service, production, and contract controls.",
+                "Document Owner": "Operations Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide records (job cards, work instructions, service records) showing controls during product or service provision for a sample client."
+                )
+            },
+            {
+                "Document Name": "HSE work Instructions",
+                "Document Number": "XXX-IMS-F-27",
+                "Guidance/Description": "Work instructions addressing health, safety, and environment.",
+                "Document Owner": "HSE Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Present completed HSE inspection checklists or records, including a recent random safety inspection outcome."
+                )
+            }
+        ],
+        "8.5.2": [
+            {
+                "Document Name": "Procedure for Document and Record Control",
+                "Document Number": "XXX-IMS-P-14",
+                "Guidance/Description": "Defines controls for document identification and traceability.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show examples (logs, tags, digital tracking) of how documents or products are identified and traced throughout service or production."
+                )
+            },
+            {
+                "Document Name": "Change Management Form",
+                "Document Number": "XXX-IMS-F-28",
+                "Guidance/Description": "Form to log and authorize changes to production/service.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide a completed form for a recent change in production or service, detailing the traceability process."
+                )
+            },
+            {
+                "Document Name": "Master List of Documents",
+                "Document Number": "XXX-IMS-F-04",
+                "Guidance/Description": "Master index of all documents for traceability.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show how the master list supports document traceability, with an annotated example."
+                )
+            },
+            {
+                "Document Name": "Documents Change Request Form",
+                "Document Number": "XXX-IMS-F-21",
+                "Guidance/Description": "Request form for document changes affecting traceability.",
+                "Document Owner": "All Staff",
+                "Approved By": "Document Control Coordinator",
+                "Stage 2 Prompt": (
+                    "Show a sample of this form including traceability notes and resolution for one recent request."
+                )
+            }
+        ],
+        "8.5.3": [
+            {
+                "Document Name": "List of Item Received",
+                "Document Number": "XXX-IMS-F-29",
+                "Guidance/Description": "Log of customer or external provider property received.",
+                "Document Owner": "Warehouse Supervisor",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show a filled form evidencing the receipt and safeguarding of property from a customer or supplier."
+                )
+            }
+        ],
+        "8.5.4": [
+            {
+                "Document Name": "Preservation",
+                "Document Number": "General Description",
+                "Guidance/Description": "Describes measures for preservation of product through production/service lifecycle.",
+                "Document Owner": "Operations Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Explain methods for preserving product/service conformity (packaging, storage, labeling), and give an example from a recent job."
+                )
+            }
+        ],
+        "8.5.5": [
+            {
+                "Document Name": "Customer Feedback Analysis Report",
+                "Document Number": "XXX-IMS-F-30",
+                "Guidance/Description": "Reports on customer feedback and post-delivery activities.",
+                "Document Owner": "Customer Service Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Show a recent customer feedback report, delivery note, or post-delivery survey analysis with a completed action."
+                )
+            }
+        ],
+        "8.5.6": [
+            {
+                "Document Name": "Procedure for Change Management",
+                "Document Number": "XXX-IMS-P-15",
+                "Guidance/Description": "Describes the process for managing changes affecting product/service.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide a sample record of a product/service change from initial request to implementation for one project/client."
+                )
+            },
+            {
+                "Document Name": "Documents Change Request Form",
+                "Document Number": "XXX-IMS-F-21",
+                "Guidance/Description": "Form for logging changes as part of the change management process.",
+                "Document Owner": "All Staff",
+                "Approved By": "Document Control Coordinator",
+                "Stage 2 Prompt": (
+                    "Show a completed change request relating to a service/product delivered, including status and approvals."
+                )
+            }
+        ],
+        "8.6": [
+            {
+                "Document Name": "Final Inspection Report",
+                "Document Number": "XXX-IMS-F-30",
+                "Guidance/Description": "Final inspection record for product/service before release.",
+                "Document Owner": "Quality Inspector",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show at least one signed final inspection report for a product or service delivered to a client relevant to your scope."
+                )
+            }
+        ],
+        "8.7": [
+            {
+                "Document Name": "Procedure for Management of Non-Conformities and Corrective Actions",
+                "Document Number": "XXX-IMS-P-16",
+                "Guidance/Description": "Procedure to identify, control, and correct nonconforming outputs.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide records/log for 2-3 nonconforming outputs, including actions taken and follow-up verification."
+                )
+            },
+            {
+                "Document Name": "Registry and Status Nonconformities and Corrective Actions",
+                "Document Number": "XXX-IMS-F-31",
+                "Guidance/Description": "Log/register of nonconformities, corrections, and status.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Show the registry for the last year with two sample entries, their closure or current status, including evidence for action."
+                )
+            }
+        ],
+        "9.1": [
+            {
+                "Document Name": "Procedure for Monitoring & Measurement",
+                "Document Number": "XXX-IMS-P-17",
+                "Guidance/Description": "Defines how IMS performance is measured, analyzed, and evaluated.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show monitoring/measurement plan, filled records, and summaries/results for the last quarter."
+                )
+            }
+        ],
+        "9.1.1": [
+            {
+                "Document Name": "Procedure for Compliance Management",
+                "Document Number": "XXX-IMS-P-18",
+                "Guidance/Description": "Procedure for evaluation and management of compliance obligations.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide compliance monitoring records, audits, or status reports showing periodic review."
+                )
+            }
+        ],
+        "9.1.2": [
+            {
+                "Document Name": "Procedure for Identification for Legal Requirements",
+                "Document Number": "XXX-IMS-P-19",
+                "Guidance/Description": "Describes how legal and other requirements are identified and complied with.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show a recent update or review record for legal requirements, with one example of a regulatory change tracked and addressed."
+                )
+            },
+            {
+                "Document Name": "List of all legal documents and legal requirements",
+                "Document Number": "XXX-IMS-F-11",
+                "Guidance/Description": "Up-to-date register of all relevant legal requirements.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide a copy of the legal register and highlight the learning/action taken on a new requirement in the last 6 months."
+                )
+            }
+        ],
+        "9.1.3": [
+            {
+                "Document Name": "Data Analysis Record",
+                "Document Number": "XXX-IMS-F-03",
+                "Guidance/Description": "Record and analysis/results of monitored data for continual improvement.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show a sample analysis record and explain the actions decided based on this data analysis."
+                )
+            }
+        ],
+        "9.2": [
+            {
+                "Document Name": "Procedure for Internal Audit",
+                "Document Number": "XXX-IMS-F-04",
+                "Guidance/Description": "Describes how internal audits are planned, conducted, and followed up.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide the last two internal audit reports, including audit program and corrections for non-conformities identified."
+                )
+            },
+            {
+                "Document Name": "Internal Audit Program",
+                "Document Number": "XXX-IMS-F-32",
+                "Guidance/Description": "Schedule/calendar of planned internal audits.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current annual audit program including areas covered and assigned auditors."
+                )
+            },
+            {
+                "Document Name": "Internal Audit Schedule",
+                "Document Number": "XXX-IMS-F-33",
+                "Guidance/Description": "Detailed audit timetable and auditor assignments.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show the detailed schedule and confirmation/audit notifications sent."
+                )
+            },
+            {
+                "Document Name": "Internal Audit Report",
+                "Document Number": "XXX-IMS-F-34",
+                "Guidance/Description": "Completed report with findings, recommendations, and corrective action.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide a recent audit report, and summarize 2-3 nonconformities found, including their closure status and responsible persons."
+                )
+            }
+        ],
+        "9.3": [
+            {
+                "Document Name": "Procedure for Management Review",
+                "Document Number": "XXX-IMS-P-20",
+                "Guidance/Description": "Defines the management review process and requirements.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show management review schedule, agenda, and minutes for the most recent meeting, including actions and persons responsible."
+                )
+            },
+            {
+                "Document Name": "Management Review Minutes",
+                "Document Number": "XXX-IMS-F-35",
+                "Guidance/Description": "Signed minutes from management review meetings.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide the last approved minutes and highlight key outputs, decisions, and assigned actions."
+                )
+            }
+        ],
+        "10.2": [
+            {
+                "Document Name": "Procedure for Management of Non-Conformities and Corrective Actions",
+                "Document Number": "XXX-IMS-P-21",
+                "Guidance/Description": "Details how non-conformities are corrected and actions tracked.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide evidence of at least two corrective actions still in progress, along with their status, owner, and planned closure date."
+                )
+            },
+            {
+                "Document Name": "Registry and Status Nonconformities and Corrective Actions",
+                "Document Number": "XXX-IMS-F-36",
+                "Guidance/Description": "Register/log showing status of all non-conformities and corrective actions.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show registry with status updates and details for at least two nonconformities (open and closed)."
+                )
+            },
+            {
+                "Document Name": "Non Conformity Report",
+                "Document Number": "XXX-IMS-F-37",
+                "Guidance/Description": "Detailed report evidencing closure and verification for each nonconformity.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide a sample nonconformity closure report, including root cause, corrections, actions, and verification."
+                )
+            }
+        ],
+        "10.3": [
+            {
+                "Document Name": "Management Review Minutes",
+                "Document Number": "XXX-IMS-F-35",
+                "Guidance/Description": "Signed minutes, including continual improvement review and actions.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show evidence that continual improvement is reviewed and driven through management review (e.g., improvement actions and tracking)."
+                )
+            },
+            {
+                "Document Name": "Non Conformity Report",
+                "Document Number": "XXX-IMS-F-37",
+                "Guidance/Description": "Evidence that continual improvement is achieved through corrective actions.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Submit an example where a nonconformity or suggestion led to a documented improvement of the management system or process."
+                )
+            }
+        ]
+        # ...expand for remaining clauses as needed...
+    }
+
+    # Pattern 2: IMS only (IMS-...)
+    pattern_2 = {
+        "4.1": [
+            {
+                "Document Name": "Integrated Management System Manual",
+                "Document Number": "IMS-MAN-01",
+                "Guidance/Description": "Describes the organization's integrated management system and its context.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide evidence (meeting records, management review, implementation plans) that context of the organization is identified and considered in operational activities. Show how external and internal issues are reviewed and acted on."
+                )
+            },
+            {
+                "Document Name": "SWOT Analysis",
+                "Document Number": "IMS-F-01",
+                "Guidance/Description": "Identifies strengths, weaknesses, opportunities, and threats.",
+                "Document Owner": "Process Owner",
+                "Approved By": "Top Management",
+                "Stage 2 Prompt": (
+                    "Provide a completed SWOT analysis form and describe how results influence actions, with a concrete example of a weakness or opportunity addressed."
+                )
+            },
+            {
+                "Document Name": "Context of Organization",
+                "Document Number": "IMS-F-02",
+                "Guidance/Description": "Defines external and internal issues relevant to organizational purpose and QMS.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show the documented issues and explain, with examples, where any of these have prompted operational or policy changes."
+                )
+            },
+        ],
+        "4.2": [
+            {
+                "Document Name": "Procedure for Determining Context and Interested Parties",
+                "Document Number": "IMS-P-01",
+                "Guidance/Description": "Process for identifying interested parties and their relevant needs and expectations.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Describe and show evidence that the organization has identified all relevant interested parties and determined their needs and expectations. List at least 4-5 actual interested parties (e.g., customers, regulators, staff, suppliers, contractors) and specific expectations for each. Show how this information is integrated into your management system."
+                )
+            },
+            {
+                "Document Name": "List of Interested Parties",
+                "Document Number": "IMS-F-03",
+                "Guidance/Description": "Lists internal and external interested parties with their needs.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current interested parties list, and for 4-5 entries, show evidence that their expectations are tracked and acted on, such as communications, meeting minutes, or actions taken."
+                )
+            }
+        ],
+        "4.3": [
+            {
+                "Document Name": "Scope of the Quality management system",
+                "Document Number": "General Description",
+                "Guidance/Description": "Defines the boundaries and applicability of the management system.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide the documented scope and give real examples showing what is included and excluded; e.g., reference specific departments, locations, or processes."
+                )
+            }
+        ],
+        "4.4": [
+            {
+                "Document Name": "Process Interaction Chart",
+                "Document Number": "IMS-PIC-01",
+                "Guidance/Description": "A diagram showing process interactions and interfaces.",
+                "Document Owner": "Process Owner",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show the process map/chart and explain with evidence (e.g., training records, cross-functional meetings) how these interactions are communicated and implemented."
+                )
+            },
+            {
+                "Document Name": "List of All procedures",
+                "Document Number": "IMS-F-04",
+                "Guidance/Description": "Comprehensive inventory of all active management system procedures.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current version of the procedures list and a tracked change showing a recent update or addition."
+                )
+            }
+        ],
+        "5.1": [
+            {
+                "Document Name": "Leadership-general",
+                "Document Number": "General Description",
+                "Guidance/Description": "Describes top management’s leadership approach in the QMS.",
+                "Document Owner": "Managing Director",
+                "Approved By": "Board",
+                "Stage 2 Prompt": (
+                    "Give examples of leadership in action (e.g., signed policies, management review participation, communication records) showing how top management demonstrates commitment."
+                )
+            },
+            {
+                "Document Name": "Customer Focus",
+                "Document Number": "POL-02",
+                "Guidance/Description": "Policy for customer focus, satisfaction, and requirements.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide evidence (customer feedback reviews, complaint logs, actions taken) that customer focus is implemented and monitored."
+                )
+            },
+        ],
+        "5.2": [
+            {
+                "Document Name": "Quality, Environment, Health & Safety Policy",
+                "Document Number": "POL-02",
+                "Guidance/Description": "Signed and communicated QHSE policy document.",
+                "Document Owner": "Managing Director",
+                "Approved By": "Board",
+                "Stage 2 Prompt": (
+                    "Provide the current signed QHSE policy; show evidence of how it is communicated and understood at relevant functions and levels."
+                )
+            }
+        ],
+        "5.3": [
+            {
+                "Document Name": "Procedure for Roles, Responsibilities & Authorities",
+                "Document Number": "IMS-P-02",
+                "Guidance/Description": "Defines functional roles, responsibilities, authorities.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide responsibility matrix or job descriptions and show evidence they are followed (e.g. signed documents, role-based process assignments)."
+                )
+            }
+        ],
+        "5.4": [
+            {
+                "Document Name": "Procedure for Consultation and participation of Workers",
+                "Document Number": "IMS-P-03",
+                "Guidance/Description": "Process for involving employees in decisions affecting QHSE.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Present meeting minutes, suggestion system outputs, or other records showing worker involvement in QMS/EMS/OHSMS activities."
+                )
+            }
+        ],
+        "6.1.1": [
+            {
+                "Document Name": "Procedure for Addressing Risk and Opportunity",
+                "Document Number": "IMS-P-04",
+                "Guidance/Description": "Documents risk and opportunity assessment and handling.",
+                "Document Owner": "Risk Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show risk register(s) and evidence that risks/opportunities are regularly identified, assessed, and acted on (e.g., risk reviews, controls implemented)."
+                )
+            },
+            {
+                "Document Name": "Registry of Key Risks & opportunities",
+                "Document Number": "IMS-F-08",
+                "Guidance/Description": "Record of identified risks and opportunities.",
+                "Document Owner": "Risk Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current registry and examples of actions taken on identified risks/opportunities."
+                )
+            },
+        ],
+        "6.1.2": [
+            {
+                "Document Name": "Procedure for Environmental Impact Assessment",
+                "Document Number": "IMS-P-05",
+                "Guidance/Description": "How to identify and manage environmental aspects and impacts.",
+                "Document Owner": "EHS Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide a completed impact assessment, and show how significant impacts are managed in your daily/operational practices."
+                )
+            },
+            {
+                "Document Name": "Procedure for Hazard Identification",
+                "Document Number": "IMS-P-06",
+                "Guidance/Description": "Process for hazard identification and risk evaluation.",
+                "Document Owner": "Safety Officer",
+                "Approved By": "EHS Manager",
+                "Stage 2 Prompt": (
+                    "Show a record of identified hazards and evidence of implemented controls or corrective actions."
+                )
+            },
+            {
+                "Document Name": "Record of Environmental Aspect and Impact Analysis",
+                "Document Number": "IMS-F-09",
+                "Guidance/Description": "Filled record of aspects and impact analyses.",
+                "Document Owner": "EHS Manager",
+                "Approved By": "Top Management",
+                "Stage 2 Prompt": (
+                    "Show the current filled record and evidence that it's regularly reviewed and updated."
+                )
+            },
+            {
+                "Document Name": "Records of Hazard Analysis and Risk Treatement",
+                "Document Number": "IMS-F-10",
+                "Guidance/Description": "Actual hazard analysis and risk treatment records.",
+                "Document Owner": "Safety Officer",
+                "Approved By": "EHS Manager",
+                "Stage 2 Prompt": (
+                    "Present completed forms with evidence of actions taken as a result (e.g. mitigation implemented)."
+                )
+            }
+        ],
+        "6.1.3": [
+            {
+                "Document Name": "Procedure for identification for legal requirements",
+                "Document Number": "IMS-P-07",
+                "Guidance/Description": "Process to identify, access and comply with legal/other requirements.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show the process for legal requirement identification, and current legal register. Give an example of recent new/changed requirement tracked and acted on."
+                )
+            },
+            {
+                "Document Name": "List of all legal documents and legal requirements",
+                "Document Number": "IMS-F-11",
+                "Guidance/Description": "Register of legal/other compliance requirements.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide an up-to-date legal register and show evidence of ongoing review/updates."
+                )
+            }
+        ],
+        "6.2": [
+            {
+                "Document Name": "Quality & HSE Objectives, Quality & HSE objective monitoring sheets, Results of the Quality Objectives",
+                "Document Number": "IMS-OBJ-01",
+                "Guidance/Description": "Records QHSE objectives, plans, performance indicators.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide current QHSE objectives, records of performance vs objectives, and evidence of action when objectives are not achieved."
+                )
+            },
+            {
+                "Document Name": "Objective Monitoring Action Plan and Results of Monitored Data",
+                "Document Number": "IMS-F-12",
+                "Guidance/Description": "Filled records of objective monitoring/action plans.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Top Management",
+                "Stage 2 Prompt": (
+                    "Show filled action plans and monitoring records, and describe a real corrective action triggered following a missed target."
+                )
+            }
+        ],
+        "7.1": [
+            {
+                "Document Name": "List of Machinery, List of Computers, List of Assets, List of equipments",
+                "Document Number": "IMS-F-13",
+                "Guidance/Description": "Inventory of major assets and machinery.",
+                "Document Owner": "Asset Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current asset list and evidence it's maintained and updated regularly; provide an example of how maintenance is scheduled using the list."
+                )
+            },
+            {
+                "Document Name": "Annual maintainance plan and calibration plan for machines and equipments",
+                "Document Number": "IMS-F-42",
+                "Guidance/Description": "Schedules and records for maintenance/calibration.",
+                "Document Owner": "Maintenance Supervisor",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Show this year's plan and proof that maintenance and calibration are performed as scheduled (e.g., completed checklists, certificates)."
+                )
+            }
+        ],
+        "7.2": [
+            {
+                "Document Name": "Procedure for Training & Competenacy",
+                "Document Number": "IMS-P-08",
+                "Guidance/Description": "How to manage and verify employee competency.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show training and competence procedure and evidence (training records, competence evaluations) that personnel are competent for roles assigned."
+                )
+            },
+            {
+                "Document Name": "Competence Matrix",
+                "Document Number": "IMS-F-14",
+                "Guidance/Description": "Matrix of staff roles, competencies, qualification status.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show the current competence matrix and evidence that gaps are tracked and closed with actual data from the past year."
+                )
+            },
+            {
+                "Document Name": "Annual training Calendar",
+                "Document Number": "IMS-F-15",
+                "Guidance/Description": "Planned training events for the year.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide recent annual training plan and proof of completed sessions."
+                )
+            },
+            {
+                "Document Name": "Effecetiveness of Training Provided",
+                "Document Number": "IMS-F-16",
+                "Guidance/Description": "Evaluation of training effectiveness.",
+                "Document Owner": "Training Coordinator",
+                "Approved By": "HR Manager",
+                "Stage 2 Prompt": (
+                    "Present completed effectiveness evaluations and corrective actions taken if training outcomes were not met."
+                )
+            },
+            {
+                "Document Name": "Annual Training Records",
+                "Document Number": "IMS-F-17",
+                "Guidance/Description": "Records of all training carried out in the year.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show signed training attendance records and certificates for at least 4 different trainings."
+                )
+            },
+            {
+                "Document Name": "Competence Evaluation",
+                "Document Number": "IMS-F-18",
+                "Guidance/Description": "Evaluation records for individual competence.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "HR Manager",
+                "Stage 2 Prompt": (
+                    "Submit actual filled-in evaluation forms and show how incompetence is identified and corrected."
+                )
+            }
+        ],
+        "7.3": [
+            {
+                "Document Name": "Integrated Management System Manual",
+                "Document Number": "IMS-MAN-01",
+                "Guidance/Description": "Manual describing the organization's IMS.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show physical/digital copies of the manual and evidence that staff have access and reference it in work."
+                )
+            }
+        ],
+        "7.4": [
+            {
+                "Document Name": "Integrated Management System Manual",
+                "Document Number": "IMS-MAN-01",
+                "Guidance/Description": "Manual includes communication procedures.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Explain how communication requirements from the manual are followed in practice; provide communications sent using the guidance."
+                )
+            },
+            {
+                "Document Name": "Procedure for Internal and External Communication",
+                "Document Number": "IMS-P-09",
+                "Guidance/Description": "How the organization manages its internal/external communications.",
+                "Document Owner": "Communications Coordinator",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show an example of actual internal and external communication regarding QMS (e.g. safety alerts, customer letters)."
+                )
+            }
+        ],
+        "7.5": [
+            {
+                "Document Name": "Procedure for Document and Record Control",
+                "Document Number": "IMS-P-09",
+                "Guidance/Description": "Document control process explained.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show a controlled document with revision history, and evidence that obsolete versions are removed from use."
+                )
+            },
+            {
+                "Document Name": "Master List of Documents",
+                "Document Number": "IMS-F-04",
+                "Guidance/Description": "List of all controlled documents.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current master list, mark controlled/uncontrolled copies, and show an example of a document recently added or revised."
+                )
+            },
+            {
+                "Document Name": "List of External Origin Documents",
+                "Document Number": "IMS-F-19",
+                "Guidance/Description": "Documents controlled that come from outside the organization.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide examples showing external documents tracked and updated—e.g., a regulation update tracked in the system."
+                )
+            },
+            {
+                "Document Name": "Documents Change Request Form",
+                "Document Number": "IMS-F-20",
+                "Guidance/Description": "Form for requesting changes to documents.",
+                "Document Owner": "All Staff",
+                "Approved By": "Document Control Coordinator",
+                "Stage 2 Prompt": (
+                    "Provide one completed change request form and show how requests are logged and tracked."
+                )
+            }
+        ],
+        "8.1": [
+            {
+                "Document Name": "Master List of Operational Procedures",
+                "Document Number": "IMS-F-04",
+                "Guidance/Description": "Write a prompt to list of core operation procedures as per the scope.",
+                "Document Owner": "",
+                # Not directly specified; usually Operations Manager or Process Owner – fill as per your org chart
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "List all core operational procedures maintained under the IMS, as per your organization's scope. Show how these procedures are controlled and regularly reviewed."
+                )
+            },
+            {
+                "Document Name": "Change management Form",
+                "Document Number": "IMS-F-21",
+                "Guidance/Description": "Change management documentation related to operational processes.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show completed change management forms reflecting changes in any operational procedure or process over the last year."
+                )
+            },
+            {
+                "Document Name": "Records of Hazard Analysis and Risk Treatement",
+                "Document Number": "IMS-F-10",
+                "Guidance/Description": "Write a prompt about the hazard analysis and risk treatment identified for each operational procedure.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Provide filled records of hazard analysis and risk treatment performed for major operational activities. Give an example illustrating how results from these records led to implemented controls."
+                )
+            }
+        ],
+        "8.2": [
+            {
+                "Document Name": "Master List of Operational Procedures",
+                "Document Number": "IMS-F-04",
+                "Guidance/Description": "Write a prompt to list of core operation procedures as per the scope.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show the master list of operational procedures with reference to customer requirements. Provide a sample showing the trace from customer requirements to documented procedures."
+                )
+            },
+            {
+                "Document Name": "Procedure for Emergency Preparedness",
+                "Document Number": "IMS-P-10",
+                "Guidance/Description": "Write a prompt that emergency evacuation plan verified and found evident.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show your current emergency preparedness procedure. Provide evidence (e.g., evacuation drill records) that the plan is tested and known by staff."
+                )
+            }
+        ],
+        "8.3": [
+            {
+                "Document Name": "Procedure for Identification of Design Input & Output of the product and services",
+                "Document Number": "IMS-P-11",
+                "Guidance/Description": "Write a prompt that design & development prompt verified (create a sample of any product or service delivered to any client as per the scope).",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show a sample of design & development documentation for a product or service as per your organization’s scope. Include input/output records and version control."
+                )
+            },
+            {
+                "Document Name": "Design Review and Approval Sheet",
+                "Document Number": "IMS-F-22",
+                "Guidance/Description": "Write a prompt that design review and approval verified (create a sample of any product or service delivered to any client as per the scope).",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Provide a completed design review and approval sheet for a recent project, showing signatures/approvals and identified issues."
+                )
+            },
+            {
+                "Document Name": "Design Progess Sheet",
+                "Document Number": "IMS-F-23",
+                "Guidance/Description": "Write a prompt that design process flow verified (create a sample of any product or service delivered to any client as per the scope).",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Present a filled-in design process flow/progress sheet documenting key stages, milestones, and change management actions for a selected design project."
+                )
+            }
+        ],
+        "8.4": [
+            {
+                "Document Name": "Procedure for Selection & Evaluation of Vendors",
+                "Document Number": "IMS-P-12",
+                "Guidance/Description": "Describes selection, approval, and evaluation of suppliers.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide supplier evaluation records showing at least two vendors evaluated with outcomes. Include criteria used for assessment and ongoing monitoring actions."
+                )
+            },
+            {
+                "Document Name": "Procedure for Purchasing Management",
+                "Document Number": "IMS-P-13",
+                "Guidance/Description": "Defines the purchasing process and controls.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show sample purchase orders and evidence of implementation of purchasing procedures, including approval and verification steps."
+                )
+            },
+            {
+                "Document Name": "Vendor and Sub Contractor Registration Form",
+                "Document Number": "IMS-F-24",
+                "Guidance/Description": "Form used for registering new vendors/subcontractors.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide a completed registration form for a sample supplier, noting evaluation and approval process."
+                )
+            },
+            {
+                "Document Name": "List of Approved Vendors and Sub Contractors",
+                "Document Number": "IMS-F-25",
+                "Guidance/Description": "Current list of all approved suppliers and subcontractors.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the list with at least two example suppliers, including approval status and date of last evaluation."
+                )
+            },
+            {
+                "Document Name": "Vendor Registration Form",
+                "Document Number": "IMS-F-26",
+                "Guidance/Description": "Form evidencing vendor registration and approval.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show a completed and signed registration form for a vendor from the current year."
+                )
+            }
+        ],
+        "8.5.1": [
+            {
+                "Document Name": "Procedure for Service/Production/Contract",
+                "Document Number": "IMS-P-14",
+                "Guidance/Description": "Describes service, production, and contract controls.",
+                "Document Owner": "Operations Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide records (job cards, work instructions, service records) showing controls during product or service provision for a sample client."
+                )
+            },
+            {
+                "Document Name": "HSE work Instructions",
+                "Document Number": "IMS-F-27",
+                "Guidance/Description": "Work instructions addressing health, safety, and environment.",
+                "Document Owner": "HSE Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Present completed HSE inspection checklists or records, including a recent random safety inspection outcome."
+                )
+            }
+        ],
+        "8.5.2": [
+            {
+                "Document Name": "Procedure for Document and Record Control",
+                "Document Number": "IMS-P-14",
+                "Guidance/Description": "Defines controls for document identification and traceability.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show examples (logs, tags, digital tracking) of how documents or products are identified and traced throughout service or production."
+                )
+            },
+            {
+                "Document Name": "Change Management Form",
+                "Document Number": "IMS-F-28",
+                "Guidance/Description": "Form to log and authorize changes to production/service.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide a completed form for a recent change in production or service, detailing the traceability process."
+                )
+            },
+            {
+                "Document Name": "Master List of Documents",
+                "Document Number": "XXX-IMS-F-04",
+                "Guidance/Description": "Master index of all documents for traceability.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show how the master list supports document traceability, with an annotated example."
+                )
+            },
+            {
+                "Document Name": "Documents Change Request Form",
+                "Document Number": "IMS-F-21",
+                "Guidance/Description": "Request form for document changes affecting traceability.",
+                "Document Owner": "All Staff",
+                "Approved By": "Document Control Coordinator",
+                "Stage 2 Prompt": (
+                    "Show a sample of this form including traceability notes and resolution for one recent request."
+                )
+            }
+        ],
+        "8.5.3": [
+            {
+                "Document Name": "List of Item Received",
+                "Document Number": "IMS-F-29",
+                "Guidance/Description": "Log of customer or external provider property received.",
+                "Document Owner": "Warehouse Supervisor",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show a filled form evidencing the receipt and safeguarding of property from a customer or supplier."
+                )
+            }
+        ],
+        "8.5.4": [
+            {
+                "Document Name": "Preservation",
+                "Document Number": "General Description",
+                "Guidance/Description": "Describes measures for preservation of product through production/service lifecycle.",
+                "Document Owner": "Operations Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Explain methods for preserving product/service conformity (packaging, storage, labeling), and give an example from a recent job."
+                )
+            }
+        ],
+        "8.5.5": [
+            {
+                "Document Name": "Customer Feedback Analysis Report",
+                "Document Number": "IMS-F-30",
+                "Guidance/Description": "Reports on customer feedback and post-delivery activities.",
+                "Document Owner": "Customer Service Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Show a recent customer feedback report, delivery note, or post-delivery survey analysis with a completed action."
+                )
+            }
+        ],
+        "8.5.6": [
+            {
+                "Document Name": "Procedure for Change Management",
+                "Document Number": "IMS-P-15",
+                "Guidance/Description": "Describes the process for managing changes affecting product/service.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide a sample record of a product/service change from initial request to implementation for one project/client."
+                )
+            },
+            {
+                "Document Name": "Documents Change Request Form",
+                "Document Number": "IMS-F-21",
+                "Guidance/Description": "Form for logging changes as part of the change management process.",
+                "Document Owner": "All Staff",
+                "Approved By": "Document Control Coordinator",
+                "Stage 2 Prompt": (
+                    "Show a completed change request relating to a service/product delivered, including status and approvals."
+                )
+            }
+        ],
+        "8.6": [
+            {
+                "Document Name": "Final Inspection Report",
+                "Document Number": "IMS-F-30",
+                "Guidance/Description": "Final inspection record for product/service before release.",
+                "Document Owner": "Quality Inspector",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show at least one signed final inspection report for a product or service delivered to a client relevant to your scope."
+                )
+            }
+        ],
+        "8.7": [
+            {
+                "Document Name": "Procedure for Management of Non-Conformities and Corrective Actions",
+                "Document Number": "IMS-P-16",
+                "Guidance/Description": "Procedure to identify, control, and correct nonconforming outputs.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide records/log for 2-3 nonconforming outputs, including actions taken and follow-up verification."
+                )
+            },
+            {
+                "Document Name": "Registry and Status Nonconformities and Corrective Actions",
+                "Document Number": "IMS-F-31",
+                "Guidance/Description": "Log/register of nonconformities, corrections, and status.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Show the registry for the last year with two sample entries, their closure or current status, including evidence for action."
+                )
+            }
+        ],
+        "9.1": [
+            {
+                "Document Name": "Procedure for Monitoring & Measurement",
+                "Document Number": "IMS-P-17",
+                "Guidance/Description": "Defines how IMS performance is measured, analyzed, and evaluated.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show monitoring/measurement plan, filled records, and summaries/results for the last quarter."
+                )
+            }
+        ],
+        "9.1.1": [
+            {
+                "Document Name": "Procedure for Compliance Management",
+                "Document Number": "IMS-P-18",
+                "Guidance/Description": "Procedure for evaluation and management of compliance obligations.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide compliance monitoring records, audits, or status reports showing periodic review."
+                )
+            }
+        ],
+        "9.1.2": [
+            {
+                "Document Name": "Procedure for Identification for Legal Requirements",
+                "Document Number": "IMS-P-19",
+                "Guidance/Description": "Describes how legal and other requirements are identified and complied with.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show a recent update or review record for legal requirements, with one example of a regulatory change tracked and addressed."
+                )
+            },
+            {
+                "Document Name": "List of all legal documents and legal requirements",
+                "Document Number": "IMS-F-11",
+                "Guidance/Description": "Up-to-date register of all relevant legal requirements.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide a copy of the legal register and highlight the learning/action taken on a new requirement in the last 6 months."
+                )
+            }
+        ],
+        "9.1.3": [
+            {
+                "Document Name": "Data Analysis Record",
+                "Document Number": "IMS-F-03",
+                "Guidance/Description": "Record and analysis/results of monitored data for continual improvement.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show a sample analysis record and explain the actions decided based on this data analysis."
+                )
+            }
+        ],
+        "9.2": [
+            {
+                "Document Name": "Procedure for Internal Audit",
+                "Document Number": "IMS-F-04",
+                "Guidance/Description": "Describes how internal audits are planned, conducted, and followed up.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide the last two internal audit reports, including audit program and corrections for non-conformities identified."
+                )
+            },
+            {
+                "Document Name": "Internal Audit Program",
+                "Document Number": "IMS-F-32",
+                "Guidance/Description": "Schedule/calendar of planned internal audits.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current annual audit program including areas covered and assigned auditors."
+                )
+            },
+            {
+                "Document Name": "Internal Audit Schedule",
+                "Document Number": "IMS-F-33",
+                "Guidance/Description": "Detailed audit timetable and auditor assignments.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show the detailed schedule and confirmation/audit notifications sent."
+                )
+            },
+            {
+                "Document Name": "Internal Audit Report",
+                "Document Number": "IMS-F-34",
+                "Guidance/Description": "Completed report with findings, recommendations, and corrective action.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide a recent audit report, and summarize 2-3 nonconformities found, including their closure status and responsible persons."
+                )
+            }
+        ],
+        "9.3": [
+            {
+                "Document Name": "Procedure for Management Review",
+                "Document Number": "IMS-P-20",
+                "Guidance/Description": "Defines the management review process and requirements.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show management review schedule, agenda, and minutes for the most recent meeting, including actions and persons responsible."
+                )
+            },
+            {
+                "Document Name": "Management Review Minutes",
+                "Document Number": "IMS-F-35",
+                "Guidance/Description": "Signed minutes from management review meetings.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide the last approved minutes and highlight key outputs, decisions, and assigned actions."
+                )
+            }
+        ],
+        "10.2": [
+            {
+                "Document Name": "Procedure for Management of Non-Conformities and Corrective Actions",
+                "Document Number": "IMS-P-21",
+                "Guidance/Description": "Details how non-conformities are corrected and actions tracked.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide evidence of at least two corrective actions still in progress, along with their status, owner, and planned closure date."
+                )
+            },
+            {
+                "Document Name": "Registry and Status Nonconformities and Corrective Actions",
+                "Document Number": "IMS-F-36",
+                "Guidance/Description": "Register/log showing status of all non-conformities and corrective actions.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show registry with status updates and details for at least two nonconformities (open and closed)."
+                )
+            },
+            {
+                "Document Name": "Non Conformity Report",
+                "Document Number": "IMS-F-37",
+                "Guidance/Description": "Detailed report evidencing closure and verification for each nonconformity.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide a sample nonconformity closure report, including root cause, corrections, actions, and verification."
+                )
+            }
+        ],
+        "10.3": [
+            {
+                "Document Name": "Management Review Minutes",
+                "Document Number": "IMS-F-35",
+                "Guidance/Description": "Signed minutes, including continual improvement review and actions.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show evidence that continual improvement is reviewed and driven through management review (e.g., improvement actions and tracking)."
+                )
+            },
+            {
+                "Document Name": "Non Conformity Report",
+                "Document Number": "QHSE-F-37",
+                "Guidance/Description": "Evidence that continual improvement is achieved through corrective actions.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Submit an example where a nonconformity or suggestion led to a documented improvement of the management system or process."
+                )
+            }
+        ]
+        # ...expand for remaining clauses as needed...
+    }
+
+    pattern_3 = {
+        "4.1": [
+            {
+                "Document Name": "Integrated Management System Manual",
+                "Document Number": "QHSE-MAN-01",
+                "Guidance/Description": "Describes the organization's integrated management system and its context.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide evidence (meeting records, management review, implementation plans) that context of the organization is identified and considered in operational activities. Show how external and internal issues are reviewed and acted on."
+                )
+            },
+            {
+                "Document Name": "SWOT Analysis",
+                "Document Number": "QHSE-F-01",
+                "Guidance/Description": "Identifies strengths, weaknesses, opportunities, and threats.",
+                "Document Owner": "Process Owner",
+                "Approved By": "Top Management",
+                "Stage 2 Prompt": (
+                    "Provide a completed SWOT analysis form and describe how results influence actions, with a concrete example of a weakness or opportunity addressed."
+                )
+            },
+            {
+                "Document Name": "Context of Organization",
+                "Document Number": "QHSE-F-02",
+                "Guidance/Description": "Defines external and internal issues relevant to organizational purpose and QMS.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show the documented issues and explain, with examples, where any of these have prompted operational or policy changes."
+                )
+            },
+        ],
+        "4.2": [
+            {
+                "Document Name": "Procedure for Determining Context and Interested Parties",
+                "Document Number": "QHSE-P-01",
+                "Guidance/Description": "Process for identifying interested parties and their relevant needs and expectations.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Describe and show evidence that the organization has identified all relevant interested parties and determined their needs and expectations. List at least 4-5 actual interested parties (e.g., customers, regulators, staff, suppliers, contractors) and specific expectations for each. Show how this information is integrated into your management system."
+                )
+            },
+            {
+                "Document Name": "List of Interested Parties",
+                "Document Number": "QHSE-F-03",
+                "Guidance/Description": "Lists internal and external interested parties with their needs.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current interested parties list, and for 4-5 entries, show evidence that their expectations are tracked and acted on, such as communications, meeting minutes, or actions taken."
+                )
+            }
+        ],
+        "4.3": [
+            {
+                "Document Name": "Scope of the Quality management system",
+                "Document Number": "General Description",
+                "Guidance/Description": "Defines the boundaries and applicability of the management system.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide the documented scope and give real examples showing what is included and excluded; e.g., reference specific departments, locations, or processes."
+                )
+            }
+        ],
+        "4.4": [
+            {
+                "Document Name": "Process Interaction Chart",
+                "Document Number": "QHSE-PIC-01",
+                "Guidance/Description": "A diagram showing process interactions and interfaces.",
+                "Document Owner": "Process Owner",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show the process map/chart and explain with evidence (e.g., training records, cross-functional meetings) how these interactions are communicated and implemented."
+                )
+            },
+            {
+                "Document Name": "List of All procedures",
+                "Document Number": "QHSE-F-04",
+                "Guidance/Description": "Comprehensive inventory of all active management system procedures.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current version of the procedures list and a tracked change showing a recent update or addition."
+                )
+            }
+        ],
+        "5.1": [
+            {
+                "Document Name": "Leadership-general",
+                "Document Number": "General Description",
+                "Guidance/Description": "Describes top management’s leadership approach in the QMS.",
+                "Document Owner": "Managing Director",
+                "Approved By": "Board",
+                "Stage 2 Prompt": (
+                    "Give examples of leadership in action (e.g., signed policies, management review participation, communication records) showing how top management demonstrates commitment."
+                )
+            },
+            {
+                "Document Name": "Customer Focus",
+                "Document Number": "POL-02",
+                "Guidance/Description": "Policy for customer focus, satisfaction, and requirements.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide evidence (customer feedback reviews, complaint logs, actions taken) that customer focus is implemented and monitored."
+                )
+            },
+        ],
+        "5.2": [
+            {
+                "Document Name": "Quality, Environment, Health & Safety Policy",
+                "Document Number": "POL-02",
+                "Guidance/Description": "Signed and communicated QHSE policy document.",
+                "Document Owner": "Managing Director",
+                "Approved By": "Board",
+                "Stage 2 Prompt": (
+                    "Provide the current signed QHSE policy; show evidence of how it is communicated and understood at relevant functions and levels."
+                )
+            }
+        ],
+        "5.3": [
+            {
+                "Document Name": "Procedure for Roles, Responsibilities & Authorities",
+                "Document Number": "QHSE-P-02",
+                "Guidance/Description": "Defines functional roles, responsibilities, authorities.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide responsibility matrix or job descriptions and show evidence they are followed (e.g. signed documents, role-based process assignments)."
+                )
+            }
+        ],
+        "5.4": [
+            {
+                "Document Name": "Procedure for Consultation and participation of Workers",
+                "Document Number": "QHSE-P-03",
+                "Guidance/Description": "Process for involving employees in decisions affecting QHSE.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Present meeting minutes, suggestion system outputs, or other records showing worker involvement in QMS/EMS/OHSMS activities."
+                )
+            }
+        ],
+        "6.1.1": [
+            {
+                "Document Name": "Procedure for Addressing Risk and Opportunity",
+                "Document Number": "QHSE-P-04",
+                "Guidance/Description": "Documents risk and opportunity assessment and handling.",
+                "Document Owner": "Risk Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show risk register(s) and evidence that risks/opportunities are regularly identified, assessed, and acted on (e.g., risk reviews, controls implemented)."
+                )
+            },
+            {
+                "Document Name": "Registry of Key Risks & opportunities",
+                "Document Number": "QHSE-F-08",
+                "Guidance/Description": "Record of identified risks and opportunities.",
+                "Document Owner": "Risk Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current registry and examples of actions taken on identified risks/opportunities."
+                )
+            },
+        ],
+        "6.1.2": [
+            {
+                "Document Name": "Procedure for Environmental Impact Assessment",
+                "Document Number": "QHSE-P-05",
+                "Guidance/Description": "How to identify and manage environmental aspects and impacts.",
+                "Document Owner": "EHS Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide a completed impact assessment, and show how significant impacts are managed in your daily/operational practices."
+                )
+            },
+            {
+                "Document Name": "Procedure for Hazard Identification",
+                "Document Number": "QHSE-P-06",
+                "Guidance/Description": "Process for hazard identification and risk evaluation.",
+                "Document Owner": "Safety Officer",
+                "Approved By": "EHS Manager",
+                "Stage 2 Prompt": (
+                    "Show a record of identified hazards and evidence of implemented controls or corrective actions."
+                )
+            },
+            {
+                "Document Name": "Record of Environmental Aspect and Impact Analysis",
+                "Document Number": "QHSE-F-09",
+                "Guidance/Description": "Filled record of aspects and impact analyses.",
+                "Document Owner": "EHS Manager",
+                "Approved By": "Top Management",
+                "Stage 2 Prompt": (
+                    "Show the current filled record and evidence that it's regularly reviewed and updated."
+                )
+            },
+            {
+                "Document Name": "Records of Hazard Analysis and Risk Treatement",
+                "Document Number": "QHSE-F-10",
+                "Guidance/Description": "Actual hazard analysis and risk treatment records.",
+                "Document Owner": "Safety Officer",
+                "Approved By": "EHS Manager",
+                "Stage 2 Prompt": (
+                    "Present completed forms with evidence of actions taken as a result (e.g. mitigation implemented)."
+                )
+            }
+        ],
+        "6.1.3": [
+            {
+                "Document Name": "Procedure for identification for legal requirements",
+                "Document Number": "QHSE-P-07",
+                "Guidance/Description": "Process to identify, access and comply with legal/other requirements.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show the process for legal requirement identification, and current legal register. Give an example of recent new/changed requirement tracked and acted on."
+                )
+            },
+            {
+                "Document Name": "List of all legal documents and legal requirements",
+                "Document Number": "QHSE-F-11",
+                "Guidance/Description": "Register of legal/other compliance requirements.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide an up-to-date legal register and show evidence of ongoing review/updates."
+                )
+            }
+        ],
+        "6.2": [
+            {
+                "Document Name": "Quality & HSE Objectives, Quality & HSE objective monitoring sheets, Results of the Quality Objectives",
+                "Document Number": "QHSE-OBJ-01",
+                "Guidance/Description": "Records QHSE objectives, plans, performance indicators.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide current QHSE objectives, records of performance vs objectives, and evidence of action when objectives are not achieved."
+                )
+            },
+            {
+                "Document Name": "Objective Monitoring Action Plan and Results of Monitored Data",
+                "Document Number": "QHSE-F-12",
+                "Guidance/Description": "Filled records of objective monitoring/action plans.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Top Management",
+                "Stage 2 Prompt": (
+                    "Show filled action plans and monitoring records, and describe a real corrective action triggered following a missed target."
+                )
+            }
+        ],
+        "7.1": [
+            {
+                "Document Name": "List of Machinery, List of Computers, List of Assets, List of equipments",
+                "Document Number": "QHSE-F-13",
+                "Guidance/Description": "Inventory of major assets and machinery.",
+                "Document Owner": "Asset Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current asset list and evidence it's maintained and updated regularly; provide an example of how maintenance is scheduled using the list."
+                )
+            },
+            {
+                "Document Name": "Annual maintainance plan and calibration plan for machines and equipments",
+                "Document Number": "QHSE-F-42",
+                "Guidance/Description": "Schedules and records for maintenance/calibration.",
+                "Document Owner": "Maintenance Supervisor",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Show this year's plan and proof that maintenance and calibration are performed as scheduled (e.g., completed checklists, certificates)."
+                )
+            }
+        ],
+        "7.2": [
+            {
+                "Document Name": "Procedure for Training & Competenacy",
+                "Document Number": "QHSE-P-08",
+                "Guidance/Description": "How to manage and verify employee competency.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show training and competence procedure and evidence (training records, competence evaluations) that personnel are competent for roles assigned."
+                )
+            },
+            {
+                "Document Name": "Competence Matrix",
+                "Document Number": "QHSE-F-14",
+                "Guidance/Description": "Matrix of staff roles, competencies, qualification status.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show the current competence matrix and evidence that gaps are tracked and closed with actual data from the past year."
+                )
+            },
+            {
+                "Document Name": "Annual training Calendar",
+                "Document Number": "QHSE-F-15",
+                "Guidance/Description": "Planned training events for the year.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide recent annual training plan and proof of completed sessions."
+                )
+            },
+            {
+                "Document Name": "Effecetiveness of Training Provided",
+                "Document Number": "QHSE-F-16",
+                "Guidance/Description": "Evaluation of training effectiveness.",
+                "Document Owner": "Training Coordinator",
+                "Approved By": "HR Manager",
+                "Stage 2 Prompt": (
+                    "Present completed effectiveness evaluations and corrective actions taken if training outcomes were not met."
+                )
+            },
+            {
+                "Document Name": "Annual Training Records",
+                "Document Number": "QHSE-F-17",
+                "Guidance/Description": "Records of all training carried out in the year.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show signed training attendance records and certificates for at least 4 different trainings."
+                )
+            },
+            {
+                "Document Name": "Competence Evaluation",
+                "Document Number": "QHSE-F-18",
+                "Guidance/Description": "Evaluation records for individual competence.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "HR Manager",
+                "Stage 2 Prompt": (
+                    "Submit actual filled-in evaluation forms and show how incompetence is identified and corrected."
+                )
+            }
+        ],
+        "7.3": [
+            {
+                "Document Name": "Integrated Management System Manual",
+                "Document Number": "QHSE-MAN-01",
+                "Guidance/Description": "Manual describing the organization's QHSE.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show physical/digital copies of the manual and evidence that staff have access and reference it in work."
+                )
+            }
+        ],
+        "7.4": [
+            {
+                "Document Name": "Integrated Management System Manual",
+                "Document Number": "QHSE-MAN-01",
+                "Guidance/Description": "Manual includes communication procedures.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Explain how communication requirements from the manual are followed in practice; provide communications sent using the guidance."
+                )
+            },
+            {
+                "Document Name": "Procedure for Internal and External Communication",
+                "Document Number": "QHSE-P-09",
+                "Guidance/Description": "How the organization manages its internal/external communications.",
+                "Document Owner": "Communications Coordinator",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show an example of actual internal and external communication regarding QMS (e.g. safety alerts, customer letters)."
+                )
+            }
+        ],
+        "7.5": [
+            {
+                "Document Name": "Procedure for Document and Record Control",
+                "Document Number": "QHSE-P-09",
+                "Guidance/Description": "Document control process explained.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show a controlled document with revision history, and evidence that obsolete versions are removed from use."
+                )
+            },
+            {
+                "Document Name": "Master List of Documents",
+                "Document Number": "QHSE-F-04",
+                "Guidance/Description": "List of all controlled documents.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current master list, mark controlled/uncontrolled copies, and show an example of a document recently added or revised."
+                )
+            },
+            {
+                "Document Name": "List of External Origin Documents",
+                "Document Number": "QHSE-F-19",
+                "Guidance/Description": "Documents controlled that come from outside the organization.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide examples showing external documents tracked and updated—e.g., a regulation update tracked in the system."
+                )
+            },
+            {
+                "Document Name": "Documents Change Request Form",
+                "Document Number": "QHSE-F-20",
+                "Guidance/Description": "Form for requesting changes to documents.",
+                "Document Owner": "All Staff",
+                "Approved By": "Document Control Coordinator",
+                "Stage 2 Prompt": (
+                    "Provide one completed change request form and show how requests are logged and tracked."
+                )
+            }
+        ],
+        "8.1": [
+            {
+                "Document Name": "Master List of Operational Procedures",
+                "Document Number": "QHSE-F-04",
+                "Guidance/Description": "Write a prompt to list of core operation procedures as per the scope.",
+                "Document Owner": "",
+                # Not directly specified; usually Operations Manager or Process Owner – fill as per your org chart
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "List all core operational procedures maintained under the QHSE, as per your organization's scope. Show how these procedures are controlled and regularly reviewed."
+                )
+            },
+            {
+                "Document Name": "Change management Form",
+                "Document Number": "QHSE-F-21",
+                "Guidance/Description": "Change management documentation related to operational processes.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show completed change management forms reflecting changes in any operational procedure or process over the last year."
+                )
+            },
+            {
+                "Document Name": "Records of Hazard Analysis and Risk Treatement",
+                "Document Number": "QHSE-F-10",
+                "Guidance/Description": "Write a prompt about the hazard analysis and risk treatment identified for each operational procedure.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Provide filled records of hazard analysis and risk treatment performed for major operational activities. Give an example illustrating how results from these records led to implemented controls."
+                )
+            }
+        ],
+        "8.2": [
+            {
+                "Document Name": "Master List of Operational Procedures",
+                "Document Number": "QHSE-F-04",
+                "Guidance/Description": "Write a prompt to list of core operation procedures as per the scope.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show the master list of operational procedures with reference to customer requirements. Provide a sample showing the trace from customer requirements to documented procedures."
+                )
+            },
+            {
+                "Document Name": "Procedure for Emergency Preparedness",
+                "Document Number": "QHSE-P-10",
+                "Guidance/Description": "Write a prompt that emergency evacuation plan verified and found evident.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show your current emergency preparedness procedure. Provide evidence (e.g., evacuation drill records) that the plan is tested and known by staff."
+                )
+            }
+        ],
+        "8.3": [
+            {
+                "Document Name": "Procedure for Identification of Design Input & Output of the product and services",
+                "Document Number": "QHSE-P-11",
+                "Guidance/Description": "Write a prompt that design & development prompt verified (create a sample of any product or service delivered to any client as per the scope).",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show a sample of design & development documentation for a product or service as per your organization’s scope. Include input/output records and version control."
+                )
+            },
+            {
+                "Document Name": "Design Review and Approval Sheet",
+                "Document Number": "QHSE-F-22",
+                "Guidance/Description": "Write a prompt that design review and approval verified (create a sample of any product or service delivered to any client as per the scope).",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Provide a completed design review and approval sheet for a recent project, showing signatures/approvals and identified issues."
+                )
+            },
+            {
+                "Document Name": "Design Progess Sheet",
+                "Document Number": "QHSE-F-23",
+                "Guidance/Description": "Write a prompt that design process flow verified (create a sample of any product or service delivered to any client as per the scope).",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Present a filled-in design process flow/progress sheet documenting key stages, milestones, and change management actions for a selected design project."
+                )
+            }
+        ],
+        "8.4": [
+            {
+                "Document Name": "Procedure for Selection & Evaluation of Vendors",
+                "Document Number": "QHSE-P-12",
+                "Guidance/Description": "Describes selection, approval, and evaluation of suppliers.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide supplier evaluation records showing at least two vendors evaluated with outcomes. Include criteria used for assessment and ongoing monitoring actions."
+                )
+            },
+            {
+                "Document Name": "Procedure for Purchasing Management",
+                "Document Number": "QHSE-P-13",
+                "Guidance/Description": "Defines the purchasing process and controls.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show sample purchase orders and evidence of implementation of purchasing procedures, including approval and verification steps."
+                )
+            },
+            {
+                "Document Name": "Vendor and Sub Contractor Registration Form",
+                "Document Number": "QHSE-F-24",
+                "Guidance/Description": "Form used for registering new vendors/subcontractors.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide a completed registration form for a sample supplier, noting evaluation and approval process."
+                )
+            },
+            {
+                "Document Name": "List of Approved Vendors and Sub Contractors",
+                "Document Number": "QHSE-F-25",
+                "Guidance/Description": "Current list of all approved suppliers and subcontractors.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the list with at least two example suppliers, including approval status and date of last evaluation."
+                )
+            },
+            {
+                "Document Name": "Vendor Registration Form",
+                "Document Number": "QHSE-F-26",
+                "Guidance/Description": "Form evidencing vendor registration and approval.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show a completed and signed registration form for a vendor from the current year."
+                )
+            }
+        ],
+        "8.5.1": [
+            {
+                "Document Name": "Procedure for Service/Production/Contract",
+                "Document Number": "QHSE-P-14",
+                "Guidance/Description": "Describes service, production, and contract controls.",
+                "Document Owner": "Operations Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide records (job cards, work instructions, service records) showing controls during product or service provision for a sample client."
+                )
+            },
+            {
+                "Document Name": "HSE work Instructions",
+                "Document Number": "QHSE-F-27",
+                "Guidance/Description": "Work instructions addressing health, safety, and environment.",
+                "Document Owner": "HSE Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Present completed HSE inspection checklists or records, including a recent random safety inspection outcome."
+                )
+            }
+        ],
+        "8.5.2": [
+            {
+                "Document Name": "Procedure for Document and Record Control",
+                "Document Number": "QHSE-P-14",
+                "Guidance/Description": "Defines controls for document identification and traceability.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show examples (logs, tags, digital tracking) of how documents or products are identified and traced throughout service or production."
+                )
+            },
+            {
+                "Document Name": "Change Management Form",
+                "Document Number": "QHSE-F-28",
+                "Guidance/Description": "Form to log and authorize changes to production/service.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide a completed form for a recent change in production or service, detailing the traceability process."
+                )
+            },
+            {
+                "Document Name": "Master List of Documents",
+                "Document Number": "XXX-QHSE-F-04",
+                "Guidance/Description": "Master index of all documents for traceability.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show how the master list supports document traceability, with an annotated example."
+                )
+            },
+            {
+                "Document Name": "Documents Change Request Form",
+                "Document Number": "QHSE-F-21",
+                "Guidance/Description": "Request form for document changes affecting traceability.",
+                "Document Owner": "All Staff",
+                "Approved By": "Document Control Coordinator",
+                "Stage 2 Prompt": (
+                    "Show a sample of this form including traceability notes and resolution for one recent request."
+                )
+            }
+        ],
+        "8.5.3": [
+            {
+                "Document Name": "List of Item Received",
+                "Document Number": "QHSE-F-29",
+                "Guidance/Description": "Log of customer or external provider property received.",
+                "Document Owner": "Warehouse Supervisor",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show a filled form evidencing the receipt and safeguarding of property from a customer or supplier."
+                )
+            }
+        ],
+        "8.5.4": [
+            {
+                "Document Name": "Preservation",
+                "Document Number": "General Description",
+                "Guidance/Description": "Describes measures for preservation of product through production/service lifecycle.",
+                "Document Owner": "Operations Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Explain methods for preserving product/service conformity (packaging, storage, labeling), and give an example from a recent job."
+                )
+            }
+        ],
+        "8.5.5": [
+            {
+                "Document Name": "Customer Feedback Analysis Report",
+                "Document Number": "QHSE-F-30",
+                "Guidance/Description": "Reports on customer feedback and post-delivery activities.",
+                "Document Owner": "Customer Service Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Show a recent customer feedback report, delivery note, or post-delivery survey analysis with a completed action."
+                )
+            }
+        ],
+        "8.5.6": [
+            {
+                "Document Name": "Procedure for Change Management",
+                "Document Number": "QHSE-P-15",
+                "Guidance/Description": "Describes the process for managing changes affecting product/service.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide a sample record of a product/service change from initial request to implementation for one project/client."
+                )
+            },
+            {
+                "Document Name": "Documents Change Request Form",
+                "Document Number": "QHSE-F-21",
+                "Guidance/Description": "Form for logging changes as part of the change management process.",
+                "Document Owner": "All Staff",
+                "Approved By": "Document Control Coordinator",
+                "Stage 2 Prompt": (
+                    "Show a completed change request relating to a service/product delivered, including status and approvals."
+                )
+            }
+        ],
+        "8.6": [
+            {
+                "Document Name": "Final Inspection Report",
+                "Document Number": "QHSE-F-30",
+                "Guidance/Description": "Final inspection record for product/service before release.",
+                "Document Owner": "Quality Inspector",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show at least one signed final inspection report for a product or service delivered to a client relevant to your scope."
+                )
+            }
+        ],
+        "8.7": [
+            {
+                "Document Name": "Procedure for Management of Non-Conformities and Corrective Actions",
+                "Document Number": "QHSE-P-16",
+                "Guidance/Description": "Procedure to identify, control, and correct nonconforming outputs.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide records/log for 2-3 nonconforming outputs, including actions taken and follow-up verification."
+                )
+            },
+            {
+                "Document Name": "Registry and Status Nonconformities and Corrective Actions",
+                "Document Number": "QHSE-F-31",
+                "Guidance/Description": "Log/register of nonconformities, corrections, and status.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Show the registry for the last year with two sample entries, their closure or current status, including evidence for action."
+                )
+            }
+        ],
+        "9.1": [
+            {
+                "Document Name": "Procedure for Monitoring & Measurement",
+                "Document Number": "QHSE-P-17",
+                "Guidance/Description": "Defines how QHSE performance is measured, analyzed, and evaluated.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show monitoring/measurement plan, filled records, and summaries/results for the last quarter."
+                )
+            }
+        ],
+        "9.1.1": [
+            {
+                "Document Name": "Procedure for Compliance Management",
+                "Document Number": "QHSE-P-18",
+                "Guidance/Description": "Procedure for evaluation and management of compliance obligations.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide compliance monitoring records, audits, or status reports showing periodic review."
+                )
+            }
+        ],
+        "9.1.2": [
+            {
+                "Document Name": "Procedure for Identification for Legal Requirements",
+                "Document Number": "QHSE-P-19",
+                "Guidance/Description": "Describes how legal and other requirements are identified and complied with.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show a recent update or review record for legal requirements, with one example of a regulatory change tracked and addressed."
+                )
+            },
+            {
+                "Document Name": "List of all legal documents and legal requirements",
+                "Document Number": "QHSE-F-11",
+                "Guidance/Description": "Up-to-date register of all relevant legal requirements.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide a copy of the legal register and highlight the learning/action taken on a new requirement in the last 6 months."
+                )
+            }
+        ],
+        "9.1.3": [
+            {
+                "Document Name": "Data Analysis Record",
+                "Document Number": "QHSE-F-03",
+                "Guidance/Description": "Record and analysis/results of monitored data for continual improvement.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show a sample analysis record and explain the actions decided based on this data analysis."
+                )
+            }
+        ],
+        "9.2": [
+            {
+                "Document Name": "Procedure for Internal Audit",
+                "Document Number": "QHSE-F-04",
+                "Guidance/Description": "Describes how internal audits are planned, conducted, and followed up.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide the last two internal audit reports, including audit program and corrections for non-conformities identified."
+                )
+            },
+            {
+                "Document Name": "Internal Audit Program",
+                "Document Number": "QHSE-F-32",
+                "Guidance/Description": "Schedule/calendar of planned internal audits.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current annual audit program including areas covered and assigned auditors."
+                )
+            },
+            {
+                "Document Name": "Internal Audit Schedule",
+                "Document Number": "QHSE-F-33",
+                "Guidance/Description": "Detailed audit timetable and auditor assignments.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show the detailed schedule and confirmation/audit notifications sent."
+                )
+            },
+            {
+                "Document Name": "Internal Audit Report",
+                "Document Number": "QHSE-F-34",
+                "Guidance/Description": "Completed report with findings, recommendations, and corrective action.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide a recent audit report, and summarize 2-3 nonconformities found, including their closure status and responsible persons."
+                )
+            }
+        ],
+        "9.3": [
+            {
+                "Document Name": "Procedure for Management Review",
+                "Document Number": "QHSE-P-20",
+                "Guidance/Description": "Defines the management review process and requirements.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show management review schedule, agenda, and minutes for the most recent meeting, including actions and persons responsible."
+                )
+            },
+            {
+                "Document Name": "Management Review Minutes",
+                "Document Number": "QHSE-F-35",
+                "Guidance/Description": "Signed minutes from management review meetings.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide the last approved minutes and highlight key outputs, decisions, and assigned actions."
+                )
+            }
+        ],
+        "10.2": [
+            {
+                "Document Name": "Procedure for Management of Non-Conformities and Corrective Actions",
+                "Document Number": "QHSE-P-21",
+                "Guidance/Description": "Details how non-conformities are corrected and actions tracked.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide evidence of at least two corrective actions still in progress, along with their status, owner, and planned closure date."
+                )
+            },
+            {
+                "Document Name": "Registry and Status Nonconformities and Corrective Actions",
+                "Document Number": "QHSE-F-36",
+                "Guidance/Description": "Register/log showing status of all non-conformities and corrective actions.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show registry with status updates and details for at least two nonconformities (open and closed)."
+                )
+            },
+            {
+                "Document Name": "Non Conformity Report",
+                "Document Number": "QHSE-F-37",
+                "Guidance/Description": "Detailed report evidencing closure and verification for each nonconformity.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide a sample nonconformity closure report, including root cause, corrections, actions, and verification."
+                )
+            }
+        ],
+        "10.3": [
+            {
+                "Document Name": "Management Review Minutes",
+                "Document Number": "QHSE-F-35",
+                "Guidance/Description": "Signed minutes, including continual improvement review and actions.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show evidence that continual improvement is reviewed and driven through management review (e.g., improvement actions and tracking)."
+                )
+            },
+            {
+                "Document Name": "Non Conformity Report",
+                "Document Number": "QHSE-F-37",
+                "Guidance/Description": "Evidence that continual improvement is achieved through corrective actions.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Submit an example where a nonconformity or suggestion led to a documented improvement of the management system or process."
+                )
+            }
+        ]
+        # ...expand for remaining clauses as needed...
+    }
+
+    pattern_4 = {
+        "4.1": [
+            {
+                "Document Name": "Integrated Management System Manual",
+                "Document Number": "MAN-01",
+                "Guidance/Description": "Describes the organization's integrated management system and its context.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide evidence (meeting records, management review, implementation plans) that context of the organization is identified and considered in operational activities. Show how external and internal issues are reviewed and acted on."
+                )
+            },
+            {
+                "Document Name": "SWOT Analysis",
+                "Document Number": "F-01",
+                "Guidance/Description": "Identifies strengths, weaknesses, opportunities, and threats.",
+                "Document Owner": "Process Owner",
+                "Approved By": "Top Management",
+                "Stage 2 Prompt": (
+                    "Provide a completed SWOT analysis form and describe how results influence actions, with a concrete example of a weakness or opportunity addressed."
+                )
+            },
+            {
+                "Document Name": "Context of Organization",
+                "Document Number": "F-02",
+                "Guidance/Description": "Defines external and internal issues relevant to organizational purpose and QMS.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show the documented issues and explain, with examples, where any of these have prompted operational or policy changes."
+                )
+            },
+        ],
+        "4.2": [
+            {
+                "Document Name": "Procedure for Determining Context and Interested Parties",
+                "Document Number": "P-01",
+                "Guidance/Description": "Process for identifying interested parties and their relevant needs and expectations.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Describe and show evidence that the organization has identified all relevant interested parties and determined their needs and expectations. List at least 4-5 actual interested parties (e.g., customers, regulators, staff, suppliers, contractors) and specific expectations for each. Show how this information is integrated into your management system."
+                )
+            },
+            {
+                "Document Name": "List of Interested Parties",
+                "Document Number": "F-03",
+                "Guidance/Description": "Lists internal and external interested parties with their needs.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current interested parties list, and for 4-5 entries, show evidence that their expectations are tracked and acted on, such as communications, meeting minutes, or actions taken."
+                )
+            }
+        ],
+        "4.3": [
+            {
+                "Document Name": "Scope of the Quality management system",
+                "Document Number": "General Description",
+                "Guidance/Description": "Defines the boundaries and applicability of the management system.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide the documented scope and give real examples showing what is included and excluded; e.g., reference specific departments, locations, or processes."
+                )
+            }
+        ],
+        "4.4": [
+            {
+                "Document Name": "Process Interaction Chart",
+                "Document Number": "PIC-01",
+                "Guidance/Description": "A diagram showing process interactions and interfaces.",
+                "Document Owner": "Process Owner",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show the process map/chart and explain with evidence (e.g., training records, cross-functional meetings) how these interactions are communicated and implemented."
+                )
+            },
+            {
+                "Document Name": "List of All procedures",
+                "Document Number": "F-04",
+                "Guidance/Description": "Comprehensive inventory of all active management system procedures.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current version of the procedures list and a tracked change showing a recent update or addition."
+                )
+            }
+        ],
+        "5.1": [
+            {
+                "Document Name": "Leadership-general",
+                "Document Number": "General Description",
+                "Guidance/Description": "Describes top management’s leadership approach in the QMS.",
+                "Document Owner": "Managing Director",
+                "Approved By": "Board",
+                "Stage 2 Prompt": (
+                    "Give examples of leadership in action (e.g., signed policies, management review participation, communication records) showing how top management demonstrates commitment."
+                )
+            },
+            {
+                "Document Name": "Customer Focus",
+                "Document Number": "POL-02",
+                "Guidance/Description": "Policy for customer focus, satisfaction, and requirements.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide evidence (customer feedback reviews, complaint logs, actions taken) that customer focus is implemented and monitored."
+                )
+            },
+        ],
+        "5.2": [
+            {
+                "Document Name": "Quality, Environment, Health & Safety Policy",
+                "Document Number": "POL-02",
+                "Guidance/Description": "Signed and communicated QHSE policy document.",
+                "Document Owner": "Managing Director",
+                "Approved By": "Board",
+                "Stage 2 Prompt": (
+                    "Provide the current signed QHSE policy; show evidence of how it is communicated and understood at relevant functions and levels."
+                )
+            }
+        ],
+        "5.3": [
+            {
+                "Document Name": "Procedure for Roles, Responsibilities & Authorities",
+                "Document Number": "P-02",
+                "Guidance/Description": "Defines functional roles, responsibilities, authorities.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide responsibility matrix or job descriptions and show evidence they are followed (e.g. signed documents, role-based process assignments)."
+                )
+            }
+        ],
+        "5.4": [
+            {
+                "Document Name": "Procedure for Consultation and participation of Workers",
+                "Document Number": "P-03",
+                "Guidance/Description": "Process for involving employees in decisions affecting QHSE.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Present meeting minutes, suggestion system outputs, or other records showing worker involvement in QMS/EMS/OHSMS activities."
+                )
+            }
+        ],
+        "6.1.1": [
+            {
+                "Document Name": "Procedure for Addressing Risk and Opportunity",
+                "Document Number": "P-04",
+                "Guidance/Description": "Documents risk and opportunity assessment and handling.",
+                "Document Owner": "Risk Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show risk register(s) and evidence that risks/opportunities are regularly identified, assessed, and acted on (e.g., risk reviews, controls implemented)."
+                )
+            },
+            {
+                "Document Name": "Registry of Key Risks & opportunities",
+                "Document Number": "F-08",
+                "Guidance/Description": "Record of identified risks and opportunities.",
+                "Document Owner": "Risk Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current registry and examples of actions taken on identified risks/opportunities."
+                )
+            },
+        ],
+        "6.1.2": [
+            {
+                "Document Name": "Procedure for Environmental Impact Assessment",
+                "Document Number": "P-05",
+                "Guidance/Description": "How to identify and manage environmental aspects and impacts.",
+                "Document Owner": "EHS Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide a completed impact assessment, and show how significant impacts are managed in your daily/operational practices."
+                )
+            },
+            {
+                "Document Name": "Procedure for Hazard Identification",
+                "Document Number": "P-06",
+                "Guidance/Description": "Process for hazard identification and risk evaluation.",
+                "Document Owner": "Safety Officer",
+                "Approved By": "EHS Manager",
+                "Stage 2 Prompt": (
+                    "Show a record of identified hazards and evidence of implemented controls or corrective actions."
+                )
+            },
+            {
+                "Document Name": "Record of Environmental Aspect and Impact Analysis",
+                "Document Number": "F-09",
+                "Guidance/Description": "Filled record of aspects and impact analyses.",
+                "Document Owner": "EHS Manager",
+                "Approved By": "Top Management",
+                "Stage 2 Prompt": (
+                    "Show the current filled record and evidence that it's regularly reviewed and updated."
+                )
+            },
+            {
+                "Document Name": "Records of Hazard Analysis and Risk Treatement",
+                "Document Number": "F-10",
+                "Guidance/Description": "Actual hazard analysis and risk treatment records.",
+                "Document Owner": "Safety Officer",
+                "Approved By": "EHS Manager",
+                "Stage 2 Prompt": (
+                    "Present completed forms with evidence of actions taken as a result (e.g. mitigation implemented)."
+                )
+            }
+        ],
+        "6.1.3": [
+            {
+                "Document Name": "Procedure for identification for legal requirements",
+                "Document Number": "P-07",
+                "Guidance/Description": "Process to identify, access and comply with legal/other requirements.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show the process for legal requirement identification, and current legal register. Give an example of recent new/changed requirement tracked and acted on."
+                )
+            },
+            {
+                "Document Name": "List of all legal documents and legal requirements",
+                "Document Number": "F-11",
+                "Guidance/Description": "Register of legal/other compliance requirements.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide an up-to-date legal register and show evidence of ongoing review/updates."
+                )
+            }
+        ],
+        "6.2": [
+            {
+                "Document Name": "Quality & HSE Objectives, Quality & HSE objective monitoring sheets, Results of the Quality Objectives",
+                "Document Number": "OBJ-01",
+                "Guidance/Description": "Records QHSE objectives, plans, performance indicators.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide current QHSE objectives, records of performance vs objectives, and evidence of action when objectives are not achieved."
+                )
+            },
+            {
+                "Document Name": "Objective Monitoring Action Plan and Results of Monitored Data",
+                "Document Number": "F-12",
+                "Guidance/Description": "Filled records of objective monitoring/action plans.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Top Management",
+                "Stage 2 Prompt": (
+                    "Show filled action plans and monitoring records, and describe a real corrective action triggered following a missed target."
+                )
+            }
+        ],
+        "7.1": [
+            {
+                "Document Name": "List of Machinery, List of Computers, List of Assets, List of equipments",
+                "Document Number": "F-13",
+                "Guidance/Description": "Inventory of major assets and machinery.",
+                "Document Owner": "Asset Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current asset list and evidence it's maintained and updated regularly; provide an example of how maintenance is scheduled using the list."
+                )
+            },
+            {
+                "Document Name": "Annual maintainance plan and calibration plan for machines and equipments",
+                "Document Number": "F-42",
+                "Guidance/Description": "Schedules and records for maintenance/calibration.",
+                "Document Owner": "Maintenance Supervisor",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Show this year's plan and proof that maintenance and calibration are performed as scheduled (e.g., completed checklists, certificates)."
+                )
+            }
+        ],
+        "7.2": [
+            {
+                "Document Name": "Procedure for Training & Competenacy",
+                "Document Number": "P-08",
+                "Guidance/Description": "How to manage and verify employee competency.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show training and competence procedure and evidence (training records, competence evaluations) that personnel are competent for roles assigned."
+                )
+            },
+            {
+                "Document Name": "Competence Matrix",
+                "Document Number": "F-14",
+                "Guidance/Description": "Matrix of staff roles, competencies, qualification status.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show the current competence matrix and evidence that gaps are tracked and closed with actual data from the past year."
+                )
+            },
+            {
+                "Document Name": "Annual training Calendar",
+                "Document Number": "F-15",
+                "Guidance/Description": "Planned training events for the year.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide recent annual training plan and proof of completed sessions."
+                )
+            },
+            {
+                "Document Name": "Effecetiveness of Training Provided",
+                "Document Number": "F-16",
+                "Guidance/Description": "Evaluation of training effectiveness.",
+                "Document Owner": "Training Coordinator",
+                "Approved By": "HR Manager",
+                "Stage 2 Prompt": (
+                    "Present completed effectiveness evaluations and corrective actions taken if training outcomes were not met."
+                )
+            },
+            {
+                "Document Name": "Annual Training Records",
+                "Document Number": "F-17",
+                "Guidance/Description": "Records of all training carried out in the year.",
+                "Document Owner": "HR Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show signed training attendance records and certificates for at least 4 different trainings."
+                )
+            },
+            {
+                "Document Name": "Competence Evaluation",
+                "Document Number": "F-18",
+                "Guidance/Description": "Evaluation records for individual competence.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "HR Manager",
+                "Stage 2 Prompt": (
+                    "Submit actual filled-in evaluation forms and show how incompetence is identified and corrected."
+                )
+            }
+        ],
+        "7.3": [
+            {
+                "Document Name": "Integrated Management System Manual",
+                "Document Number": "MAN-01",
+                "Guidance/Description": "Manual describing the organization's IMS.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show physical/digital copies of the manual and evidence that staff have access and reference it in work."
+                )
+            }
+        ],
+        "7.4": [
+            {
+                "Document Name": "Integrated Management System Manual",
+                "Document Number": "MAN-01",
+                "Guidance/Description": "Manual includes communication procedures.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Explain how communication requirements from the manual are followed in practice; provide communications sent using the guidance."
+                )
+            },
+            {
+                "Document Name": "Procedure for Internal and External Communication",
+                "Document Number": "P-09",
+                "Guidance/Description": "How the organization manages its internal/external communications.",
+                "Document Owner": "Communications Coordinator",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show an example of actual internal and external communication regarding QMS (e.g. safety alerts, customer letters)."
+                )
+            }
+        ],
+        "7.5": [
+            {
+                "Document Name": "Procedure for Document and Record Control",
+                "Document Number": "P-09",
+                "Guidance/Description": "Document control process explained.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show a controlled document with revision history, and evidence that obsolete versions are removed from use."
+                )
+            },
+            {
+                "Document Name": "Master List of Documents",
+                "Document Number": "F-04",
+                "Guidance/Description": "List of all controlled documents.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current master list, mark controlled/uncontrolled copies, and show an example of a document recently added or revised."
+                )
+            },
+            {
+                "Document Name": "List of External Origin Documents",
+                "Document Number": "F-19",
+                "Guidance/Description": "Documents controlled that come from outside the organization.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide examples showing external documents tracked and updated—e.g., a regulation update tracked in the system."
+                )
+            },
+            {
+                "Document Name": "Documents Change Request Form",
+                "Document Number": "F-20",
+                "Guidance/Description": "Form for requesting changes to documents.",
+                "Document Owner": "All Staff",
+                "Approved By": "Document Control Coordinator",
+                "Stage 2 Prompt": (
+                    "Provide one completed change request form and show how requests are logged and tracked."
+                )
+            }
+        ],
+        "8.1": [
+            {
+                "Document Name": "Master List of Operational Procedures",
+                "Document Number": "F-04",
+                "Guidance/Description": "Write a prompt to list of core operation procedures as per the scope.",
+                "Document Owner": "",
+                # Not directly specified; usually Operations Manager or Process Owner – fill as per your org chart
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "List all core operational procedures maintained under the IMS, as per your organization's scope. Show how these procedures are controlled and regularly reviewed."
+                )
+            },
+            {
+                "Document Name": "Change management Form",
+                "Document Number": "F-21",
+                "Guidance/Description": "Change management documentation related to operational processes.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show completed change management forms reflecting changes in any operational procedure or process over the last year."
+                )
+            },
+            {
+                "Document Name": "Records of Hazard Analysis and Risk Treatement",
+                "Document Number": "F-10",
+                "Guidance/Description": "Write a prompt about the hazard analysis and risk treatment identified for each operational procedure.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Provide filled records of hazard analysis and risk treatment performed for major operational activities. Give an example illustrating how results from these records led to implemented controls."
+                )
+            }
+        ],
+        "8.2": [
+            {
+                "Document Name": "Master List of Operational Procedures",
+                "Document Number": "F-04",
+                "Guidance/Description": "Write a prompt to list of core operation procedures as per the scope.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show the master list of operational procedures with reference to customer requirements. Provide a sample showing the trace from customer requirements to documented procedures."
+                )
+            },
+            {
+                "Document Name": "Procedure for Emergency Preparedness",
+                "Document Number": "P-10",
+                "Guidance/Description": "Write a prompt that emergency evacuation plan verified and found evident.",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show your current emergency preparedness procedure. Provide evidence (e.g., evacuation drill records) that the plan is tested and known by staff."
+                )
+            }
+        ],
+        "8.3": [
+            {
+                "Document Name": "Procedure for Identification of Design Input & Output of the product and services",
+                "Document Number": "P-11",
+                "Guidance/Description": "Write a prompt that design & development prompt verified (create a sample of any product or service delivered to any client as per the scope).",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Show a sample of design & development documentation for a product or service as per your organization’s scope. Include input/output records and version control."
+                )
+            },
+            {
+                "Document Name": "Design Review and Approval Sheet",
+                "Document Number": "F-22",
+                "Guidance/Description": "Write a prompt that design review and approval verified (create a sample of any product or service delivered to any client as per the scope).",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Provide a completed design review and approval sheet for a recent project, showing signatures/approvals and identified issues."
+                )
+            },
+            {
+                "Document Name": "Design Progess Sheet",
+                "Document Number": "F-23",
+                "Guidance/Description": "Write a prompt that design process flow verified (create a sample of any product or service delivered to any client as per the scope).",
+                "Document Owner": "",
+                "Approved By": "",
+                "Stage 2 Prompt": (
+                    "Present a filled-in design process flow/progress sheet documenting key stages, milestones, and change management actions for a selected design project."
+                )
+            }
+        ],
+        "8.4": [
+            {
+                "Document Name": "Procedure for Selection & Evaluation of Vendors",
+                "Document Number": "P-12",
+                "Guidance/Description": "Describes selection, approval, and evaluation of suppliers.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide supplier evaluation records showing at least two vendors evaluated with outcomes. Include criteria used for assessment and ongoing monitoring actions."
+                )
+            },
+            {
+                "Document Name": "Procedure for Purchasing Management",
+                "Document Number": "P-13",
+                "Guidance/Description": "Defines the purchasing process and controls.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show sample purchase orders and evidence of implementation of purchasing procedures, including approval and verification steps."
+                )
+            },
+            {
+                "Document Name": "Vendor and Sub Contractor Registration Form",
+                "Document Number": "F-24",
+                "Guidance/Description": "Form used for registering new vendors/subcontractors.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide a completed registration form for a sample supplier, noting evaluation and approval process."
+                )
+            },
+            {
+                "Document Name": "List of Approved Vendors and Sub Contractors",
+                "Document Number": "F-25",
+                "Guidance/Description": "Current list of all approved suppliers and subcontractors.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the list with at least two example suppliers, including approval status and date of last evaluation."
+                )
+            },
+            {
+                "Document Name": "Vendor Registration Form",
+                "Document Number": "F-26",
+                "Guidance/Description": "Form evidencing vendor registration and approval.",
+                "Document Owner": "Procurement Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show a completed and signed registration form for a vendor from the current year."
+                )
+            }
+        ],
+        "8.5.1": [
+            {
+                "Document Name": "Procedure for Service/Production/Contract",
+                "Document Number": "P-14",
+                "Guidance/Description": "Describes service, production, and contract controls.",
+                "Document Owner": "Operations Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide records (job cards, work instructions, service records) showing controls during product or service provision for a sample client."
+                )
+            },
+            {
+                "Document Name": "HSE work Instructions",
+                "Document Number": "F-27",
+                "Guidance/Description": "Work instructions addressing health, safety, and environment.",
+                "Document Owner": "HSE Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Present completed HSE inspection checklists or records, including a recent random safety inspection outcome."
+                )
+            }
+        ],
+        "8.5.2": [
+            {
+                "Document Name": "Procedure for Document and Record Control",
+                "Document Number": "P-14",
+                "Guidance/Description": "Defines controls for document identification and traceability.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show examples (logs, tags, digital tracking) of how documents or products are identified and traced throughout service or production."
+                )
+            },
+            {
+                "Document Name": "Change Management Form",
+                "Document Number": "F-28",
+                "Guidance/Description": "Form to log and authorize changes to production/service.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide a completed form for a recent change in production or service, detailing the traceability process."
+                )
+            },
+            {
+                "Document Name": "Master List of Documents",
+                "Document Number": "F-04",
+                "Guidance/Description": "Master index of all documents for traceability.",
+                "Document Owner": "Document Control Coordinator",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show how the master list supports document traceability, with an annotated example."
+                )
+            },
+            {
+                "Document Name": "Documents Change Request Form",
+                "Document Number": "F-21",
+                "Guidance/Description": "Request form for document changes affecting traceability.",
+                "Document Owner": "All Staff",
+                "Approved By": "Document Control Coordinator",
+                "Stage 2 Prompt": (
+                    "Show a sample of this form including traceability notes and resolution for one recent request."
+                )
+            }
+        ],
+        "8.5.3": [
+            {
+                "Document Name": "List of Item Received",
+                "Document Number": "F-29",
+                "Guidance/Description": "Log of customer or external provider property received.",
+                "Document Owner": "Warehouse Supervisor",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show a filled form evidencing the receipt and safeguarding of property from a customer or supplier."
+                )
+            }
+        ],
+        "8.5.4": [
+            {
+                "Document Name": "Preservation",
+                "Document Number": "General Description",
+                "Guidance/Description": "Describes measures for preservation of product through production/service lifecycle.",
+                "Document Owner": "Operations Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Explain methods for preserving product/service conformity (packaging, storage, labeling), and give an example from a recent job."
+                )
+            }
+        ],
+        "8.5.5": [
+            {
+                "Document Name": "Customer Feedback Analysis Report",
+                "Document Number": "F-30",
+                "Guidance/Description": "Reports on customer feedback and post-delivery activities.",
+                "Document Owner": "Customer Service Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Show a recent customer feedback report, delivery note, or post-delivery survey analysis with a completed action."
+                )
+            }
+        ],
+        "8.5.6": [
+            {
+                "Document Name": "Procedure for Change Management",
+                "Document Number": "P-15",
+                "Guidance/Description": "Describes the process for managing changes affecting product/service.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide a sample record of a product/service change from initial request to implementation for one project/client."
+                )
+            },
+            {
+                "Document Name": "Documents Change Request Form",
+                "Document Number": "F-21",
+                "Guidance/Description": "Form for logging changes as part of the change management process.",
+                "Document Owner": "All Staff",
+                "Approved By": "Document Control Coordinator",
+                "Stage 2 Prompt": (
+                    "Show a completed change request relating to a service/product delivered, including status and approvals."
+                )
+            }
+        ],
+        "8.6": [
+            {
+                "Document Name": "Final Inspection Report",
+                "Document Number": "F-30",
+                "Guidance/Description": "Final inspection record for product/service before release.",
+                "Document Owner": "Quality Inspector",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show at least one signed final inspection report for a product or service delivered to a client relevant to your scope."
+                )
+            }
+        ],
+        "8.7": [
+            {
+                "Document Name": "Procedure for Management of Non-Conformities and Corrective Actions",
+                "Document Number": "P-16",
+                "Guidance/Description": "Procedure to identify, control, and correct nonconforming outputs.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Provide records/log for 2-3 nonconforming outputs, including actions taken and follow-up verification."
+                )
+            },
+            {
+                "Document Name": "Registry and Status Nonconformities and Corrective Actions",
+                "Document Number": "F-31",
+                "Guidance/Description": "Log/register of nonconformities, corrections, and status.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Operations Manager",
+                "Stage 2 Prompt": (
+                    "Show the registry for the last year with two sample entries, their closure or current status, including evidence for action."
+                )
+            }
+        ],
+        "9.1": [
+            {
+                "Document Name": "Procedure for Monitoring & Measurement",
+                "Document Number": "P-17",
+                "Guidance/Description": "Defines how IMS performance is measured, analyzed, and evaluated.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show monitoring/measurement plan, filled records, and summaries/results for the last quarter."
+                )
+            }
+        ],
+        "9.1.1": [
+            {
+                "Document Name": "Procedure for Compliance Management",
+                "Document Number": "P-18",
+                "Guidance/Description": "Procedure for evaluation and management of compliance obligations.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide compliance monitoring records, audits, or status reports showing periodic review."
+                )
+            }
+        ],
+        "9.1.2": [
+            {
+                "Document Name": "Procedure for Identification for Legal Requirements",
+                "Document Number": "P-19",
+                "Guidance/Description": "Describes how legal and other requirements are identified and complied with.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show a recent update or review record for legal requirements, with one example of a regulatory change tracked and addressed."
+                )
+            },
+            {
+                "Document Name": "List of all legal documents and legal requirements",
+                "Document Number": "F-11",
+                "Guidance/Description": "Up-to-date register of all relevant legal requirements.",
+                "Document Owner": "Compliance Officer",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide a copy of the legal register and highlight the learning/action taken on a new requirement in the last 6 months."
+                )
+            }
+        ],
+        "9.1.3": [
+            {
+                "Document Name": "Data Analysis Record",
+                "Document Number": "F-03",
+                "Guidance/Description": "Record and analysis/results of monitored data for continual improvement.",
+                "Document Owner": "Quality Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show a sample analysis record and explain the actions decided based on this data analysis."
+                )
+            }
+        ],
+        "9.2": [
+            {
+                "Document Name": "Procedure for Internal Audit",
+                "Document Number": "F-04",
+                "Guidance/Description": "Describes how internal audits are planned, conducted, and followed up.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide the last two internal audit reports, including audit program and corrections for non-conformities identified."
+                )
+            },
+            {
+                "Document Name": "Internal Audit Program",
+                "Document Number": "F-32",
+                "Guidance/Description": "Schedule/calendar of planned internal audits.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide the current annual audit program including areas covered and assigned auditors."
+                )
+            },
+            {
+                "Document Name": "Internal Audit Schedule",
+                "Document Number": "F-33",
+                "Guidance/Description": "Detailed audit timetable and auditor assignments.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Show the detailed schedule and confirmation/audit notifications sent."
+                )
+            },
+            {
+                "Document Name": "Internal Audit Report",
+                "Document Number": "F-34",
+                "Guidance/Description": "Completed report with findings, recommendations, and corrective action.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Quality Manager",
+                "Stage 2 Prompt": (
+                    "Provide a recent audit report, and summarize 2-3 nonconformities found, including their closure status and responsible persons."
+                )
+            }
+        ],
+        "9.3": [
+            {
+                "Document Name": "Procedure for Management Review",
+                "Document Number": "P-20",
+                "Guidance/Description": "Defines the management review process and requirements.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show management review schedule, agenda, and minutes for the most recent meeting, including actions and persons responsible."
+                )
+            },
+            {
+                "Document Name": "Management Review Minutes",
+                "Document Number": "F-35",
+                "Guidance/Description": "Signed minutes from management review meetings.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide the last approved minutes and highlight key outputs, decisions, and assigned actions."
+                )
+            }
+        ],
+        "10.2": [
+            {
+                "Document Name": "Procedure for Management of Non-Conformities and Corrective Actions",
+                "Document Number": "P-21",
+                "Guidance/Description": "Details how non-conformities are corrected and actions tracked.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide evidence of at least two corrective actions still in progress, along with their status, owner, and planned closure date."
+                )
+            },
+            {
+                "Document Name": "Registry and Status Nonconformities and Corrective Actions",
+                "Document Number": "F-36",
+                "Guidance/Description": "Register/log showing status of all non-conformities and corrective actions.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show registry with status updates and details for at least two nonconformities (open and closed)."
+                )
+            },
+            {
+                "Document Name": "Non Conformity Report",
+                "Document Number": "F-37",
+                "Guidance/Description": "Detailed report evidencing closure and verification for each nonconformity.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Provide a sample nonconformity closure report, including root cause, corrections, actions, and verification."
+                )
+            }
+        ],
+        "10.3": [
+            {
+                "Document Name": "Management Review Minutes",
+                "Document Number": "F-35",
+                "Guidance/Description": "Signed minutes, including continual improvement review and actions.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Show evidence that continual improvement is reviewed and driven through management review (e.g., improvement actions and tracking)."
+                )
+            },
+            {
+                "Document Name": "Non Conformity Report",
+                "Document Number": "F-37",
+                "Guidance/Description": "Evidence that continual improvement is achieved through corrective actions.",
+                "Document Owner": "QHSE Manager",
+                "Approved By": "Managing Director",
+                "Stage 2 Prompt": (
+                    "Submit an example where a nonconformity or suggestion led to a documented improvement of the management system or process."
+                )
+            }
+        ]
+        # ...expand for remaining clauses as needed...
+    }
+
+
+    patterns = [
+        ("ims_org",   "Org initials + IMS (XXX-IMS-...)",           pattern_1),
+        ("ims_only",  "IMS only (IMS-...)",                         pattern_2),
+        ("qhse",      "QHSE system (QHSE-...)",                     pattern_3),
+        ("minimal",   "Minimal prefix (MAN-01, P-01, etc.)",        pattern_4),
+    ]
+    if forced_pattern_name is not None:
+        for pn, pd, cm in patterns:
+            if pn == forced_pattern_name:
+                pattern_name, pattern_desc, clause_map = pn, pd, cm
+                break
+        else:
+            pattern_name, pattern_desc, clause_map = patterns[0]
+    else:
+        pattern_name, pattern_desc, clause_map = random.choice(patterns)
+
+    # Generate full markdown table including all columns
+    lines = [
+        "| Clause | Document Name | Document Number | Guidance/Description | Document Owner | Approved By | Stage 1 Prompt |",
+        "|--------|---------------|----------------|----------------------|---------------|-------------|----------------|"
+    ]
+    for clause, docs in clause_map.items():
+        for doc in docs:
+            lines.append(
+                f"| {clause} | {doc['Document Name']} | {doc['Document Number']} | "
+                f"{doc.get('Guidance/Description', '')} | {doc.get('Document Owner', '')} | "
+                f"{doc.get('Approved By', '')} | {doc.get('Stage 1 Prompt', '')} |"
+            )
+    prompt_table = "\n".join(lines)
+
+    return pattern_name, pattern_desc, clause_map, prompt_table
+
+def generate_prompt_for_stage1(batch, audit, clause_map, prompt_table_md, pattern_desc):
+    # Collect clause-specific prompts, if you use them (ISO 9001 IMS blend)
+    stage1_prompts = []
+    for clause, docs in clause_map.items():
+        for doc in docs:
+            if "Stage 1 Prompt" in doc and doc["Stage 1 Prompt"]:
+                stage1_prompts.append(f"Clause {clause}: {doc['Stage 1 Prompt']}")
+    stage1_prompt_text = "\n".join(stage1_prompts)
+
+    attendance_list_text = "\n".join([f"- {member}" for member in audit.attendanceSheet])
+
+    return f"""
+You are an audit reporting assistant for an **ISO 9001:2015 Stage 1 Quality Management System (QMS)** audit.
+
+Use the following document numbering format throughout the report:  
+**Pattern**: {pattern_desc}  
+When mentioning any document as evidence, you **MUST** always use its name and number from the table below.  
+If a document number has a prefix like `"XXX"` or `"BLPL"` (e.g., `"XXX-IMS-F-01"`), you **MUST** replace the prefix with the initials of the organization's name when writing the report.
+- Only do this when document pattern has XXX in it. Dont do this if its just F-X or P-X
+- For example, if the organization's name is "Eco Solutions Pvt Ltd", then you must use "ESPL-IMS-F-01" instead of "XXX-IMS-F-01".
+- This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.
+- The correct initials to use for this organization are: **{audit.organizationName}**.
+- Dont mention again and again that the following document is according to ISO:9001 clause requirement.
+{prompt_table_md}
+
+---
+
+Here are detailed prompts for each clause to guide your evidence generation:
+{stage1_prompt_text}
+
+---
+
+### Audit Details:
+- Organization: {audit.organizationName}
+- QMS Scope: {audit.scope}
+- Address: {audit.address}
+- Audit Dates: {audit.startDateOfAuditStage1} to {audit.endDateOfAuditStage1}
+
+### Attendance Sheet:
+List of personnel in attendance. Use these names accurately while writing evidence, assigning realistic roles relevant to QMS (e.g., CEO, QMS Manager, Quality Officer, Compliance Officer, etc.):
+{attendance_list_text}
+
+---
+**STRICT and REDUNDANT RULES (do NOT break them):**
+- For each clause, ONLY mention as evidence the exact documents and document numbers provided in the input for that clause.
+- If a clause/question has NO documents given in the input, DO NOT invent, imply, or introduce ANY document forms, names, or numbers—leave out any document mention in your answer for that clause.
+- Under NO circumstances should you add, paraphrase, or generate document names/numbers beyond what is provided for that clause.
+- **Do NOT attempt to complete or create document numbers based on the pattern. ONLY use the exact document number provided. If a number is not listed, do not use one.**
+- If you see a general description with NO specific documents, simply generate evidence without referring to any document at all.
+- In short: **Never make up or combine document titles, forms, or numbers. Reference every document listed in the input for the clause, and nothing else.**
+
+### Instructions for Report Writing:
+- You are to ONLY update the 'Document Verification detail with statement of Conformity' field of each item in the input list.
+- DO NOT change or remove any keys like 'Cl. No', 'Description', or 'C/NC/O'.
+- If the "C/NC/O" value is "C", rephrase the "Document Verification..." as a professional, positive confirmation that QMS requirements for this clause are met, referencing relevant ISO 9001:2015 clauses and appropriate document(s).
+- If "C/NC/O" is "NC", document a specific nonconformity—clearly stating what is not conforming, referencing the relevant clause and document(s).
+- If "C/NC/O" is "O", rephrase neutrally as an observation, referencing the clause and relevant documents.
+- Maintain the input order; do not reformat or change any field except 'Document Verification detail with statement of Conformity'.
+- Every item is a dictionary, keep it exactly as-is, only updating the 'Document Verification...' field.
+- For entries where the 'Description' field includes multiple questions, provide a detailed, structured answer addressing **each question in order**.
+- Insert a blank line between each clause's answer for clarity (i.e. two newlines).
+- Responses should align with best practices for ISO 9001:2015 Stage 1 QMS audits, referencing roles and documents naturally.
+- If you reference a document, use a plausible date 7–10 months before the audit.
+- If 'C/NC/O' or 'Document Verification...' is 'NA', do not fill in or modify the field.
+
+---
+
+### Input:
+Here is the list of clause findings. Again, do NOT change the structure—only generate appropriate 'Document Verification detail with statement of Conformity' content.
+
+{json.dumps(batch, indent=2, ensure_ascii=False)}
+
+---
+
+### Output:
+Respond ONLY with the list of dictionaries, with updated 'Document Verification detail with statement of Conformity' fields.  
+Do not add markdown, commentary, or explanations.  
+Ensure each clause's answer is separated by one line (\\n\\n) for clarity.
+"""
+
+def patch_docx_by_row_index_stage1(docx_buffer, audit_rows, table_idx=None, data_start_idx=1, return_table_idx=False):
+    """
+    Patch the clause table in an ISO 9001:2015 Stage 1 audit report DOCX file,
+    using the template structure provided. Only updates real clause rows,
+    ignores section headers and non-data rows, robust to extra/merged lines, and
+    removes any '{{clause}}' placeholders.
+    """
+    from docx import Document
+
+    docx_buffer.seek(0)
+    doc = Document(docx_buffer)
+
+    # --- 1. Locate correct clause table and the true header row ---
+    expected_headers = [
+        "CL. NO",  # matches 'Cl. No', 'CL.NO', 'Cl No', etc.
+        "DESCRIPTION",
+        "C/NC/O",
+        "DOCUMENT VERIFICATION DETAIL WITH STATEMENT OF CONFORMITY"
+    ]
+
+    def norm(s):
+        return s.strip().replace(".", "").replace("&", "AND").replace("\n", " ").replace("  ", " ").upper()
+
+    found = False
+    header_row_idx = None
+    if table_idx is None:
+        for idx, table in enumerate(doc.tables):
+            max_scan = min(4, len(table.rows))
+            for hrow in range(max_scan):
+                headers = [norm(cell.text) for cell in table.rows[hrow].cells]
+                # Check for at least 4 headers
+                if len(headers) >= 4:
+                    matched = (
+                        "CL NO" in headers[0] or "CLAUSE" in headers[0]
+                    ) and (
+                        "DESCRIPTION" in headers[1]
+                    ) and (
+                        "C/NC/O" in headers[2].replace(" ", "")
+                    ) and (
+                        "DOCUMENT VERIFICATION" in headers[3]
+                    )
+                    if matched:
+                        table_idx = idx
+                        header_row_idx = hrow
+                        found = True
+                        break
+            if found:
+                break
+        else:
+            raise ValueError("Could not find ISO 9001:2015 Stage 1 clause table in DOCX file.")
+    else:
+        table = doc.tables[table_idx]
+        header_row_idx = data_start_idx - 1  # default to just before data
+
+    table = doc.tables[table_idx]
+    # If we detected a header row that's not default, patch data_start_idx to be after it
+    data_start_idx = (header_row_idx + 1) if header_row_idx is not None else data_start_idx
+
+    audit_idx = 0
+
+    # --- 2. Patch only real clause rows ---
+    skip_trailing = [
+        "other client organization-specific"  # template: trailing note
+    ]
+    for trow in table.rows[data_start_idx:]:
+        if len(trow.cells) < 4:
+            continue
+        cells_text = [cell.text.strip() for cell in trow.cells]
+        cl_no_text = cells_text[0]
+        desc_text = cells_text[1].lower() if len(cells_text) > 1 else ""
+
+        # Section/title row: all cells identical and non-empty
+        if cl_no_text and all(x == cl_no_text for x in cells_text):
+            continue
+
+        # Trailing org-notes/footers: skip row if description has "other client organization-specific"
+        if any(tag in desc_text for tag in skip_trailing):
+            continue
+
+        # Only patch rows with a non-empty and non-section clause number
+        if cl_no_text:
+            if audit_idx >= len(audit_rows):
+                break
+            arow = audit_rows[audit_idx]
+            col_keys = [
+                "Cl. No",
+                "Description",
+                "C/NC/O",
+                "Document Verification detail with statement of Conformity"
+            ]
+            for col, key in enumerate(col_keys):
+                val = str(arow.get(key, "")).replace("{{clause}}", "")
+                trow.cells[col].text = val
+            audit_idx += 1
+
+    # --- 3. Row count mismatch warning ---
+    if audit_idx < len(audit_rows):
+        print(f"⚠️ Warning: Not all audit_rows were patched ({audit_idx} of {len(audit_rows)})")
+    elif audit_idx > len(audit_rows):
+        print(f"⚠️ Warning: More table lines than data rows ({audit_idx} > {len(audit_rows)})")
+
+    # --- 4. Cleanup: remove any stray '{{clause}}' placeholders in the table ---
+    for trow in table.rows:
+        for cell in trow.cells:
+            if "{{clause}}" in cell.text:
+                cell.text = cell.text.replace("{{clause}}", "")
+
+    docx_buffer.seek(0)
+    docx_buffer.truncate(0)
+    doc.save(docx_buffer)
+    docx_buffer.seek(0)
+    if return_table_idx:
+        return docx_buffer, table_idx
+    return docx_buffer
+
+# ---------- MODELS ----------
+
+class ISO9001Stage1Audit(BaseModel):
+    organizationName: str
+    address: str
+    siteAddress: Optional[str] = ""
+    numberOfEmployees: int
+    emailId: EmailStr
+    contactPerson: str
+    telephoneFax: str
+    scope: str
+    riskCategory: str
+    iafCode: str
+    auditTeam: List[str]
+    auditManDays: str
+    startDateOfAuditStage1: str
+    endDateOfAuditStage1: str
+    startDateOfAuditStage2: Optional[str] = None
+    endDateOfAuditStage2: Optional[str] = None
+    auditMode: str
+    quotedManDaysAdequate: str
+    changeInEmployeeDetail: str
+    changeInScope: str
+    additionalInformation: str
+    internalAuditFrequency: str
+    dateOfLastInternalAudit: str
+    managementReviewFrequency: str
+    dateOfLastManagementReview: str
+    recommendationForStage2: str
+    reviewedBy: str
+    na_clauses: Optional[List[str]] = []
+    attendanceSheet: List[str]
+    dateOfReview: str
+    clientName: str
+    designation: str
+    auditorName: str
+
+class ISO9001Stage2Audit(BaseModel):
+    organizationName: str
+    address: str
+    siteAddress: Optional[str] = ""
+    numberOfEmployees: int
+    emailId: EmailStr
+    contactPerson: str
+    telephoneFax: str
+    scope: str
+    riskCategory: str
+    iafCode: str
+    auditTeam: List[str]
+    auditManDays: str
+    startDateOfAuditStage1: str  # Required
+    endDateOfAuditStage1: str  # Required
+    startDateOfAuditStage2: str
+    endDateOfAuditStage2: str
+    auditMode: str
+    quotedManDaysAdequate: str
+    changeInEmployeeDetail: str
+    changeInScope: str
+    additionalInformation: str
+    internalAuditFrequency: str
+    dateOfLastInternalAudit: str
+    managementReviewFrequency: str
+    dateOfLastManagementReview: str
+    recommendationForStage2: str
+    reviewedBy: str
+    na_clauses: Optional[List[str]] = []
+    attendanceSheet: List[str]
+    dateOfReview: str
+    clientName: str
+    designation: str
+    auditorName: str
+
+class CombinedAuditRequest(BaseModel):
+    stage1_audit: ISO9001Stage1Audit
+    stage2_audit: ISO9001Stage2Audit
+
+
+@router.post("/stage1/submit")
+async def submit_iso9001_stage1(audit: ISO9001Stage1Audit, forced_pattern_name=None):
+
+    doc = DocxTemplate("templates/iso9001_stage1.docx")
+    context = {
+        "organizationName": audit.organizationName,
+        "address": audit.address,
+        "siteAddress": audit.siteAddress,
+        "numberOfEmployees": audit.numberOfEmployees,
+        "emailId": audit.emailId,
+        "contactPerson": audit.contactPerson,
+        "telephoneFax": audit.telephoneFax,
+        "scope": audit.scope,
+        "riskCategory": audit.riskCategory,
+        "iafCode": audit.iafCode,
+        "auditTeam": "\n".join(audit.auditTeam),
+        "auditManDays": audit.auditManDays,
+        "startDateOfAudit": audit.startDateOfAuditStage1,
+        "endDateOfAudit": audit.endDateOfAuditStage1,
+        "auditMode": audit.auditMode,
+        "quotedManDaysAdequate": audit.quotedManDaysAdequate,
+        "changeInEmployeeDetail": audit.changeInEmployeeDetail,
+        "changeInScope": audit.changeInScope,
+        "additionalInformation": audit.additionalInformation,
+        "internalAuditFrequency": audit.internalAuditFrequency,
+        "dateOfLastInternalAudit": audit.dateOfLastInternalAudit,
+        "managementReviewFrequency": audit.managementReviewFrequency,
+        "dateOfLastManagementReview": audit.dateOfLastManagementReview,
+        "reviewedBy": audit.reviewedBy,
+        "dateOfReview": audit.dateOfReview,
+        "clientName": audit.clientName,
+        "designation": audit.designation,
+        "auditorName": audit.auditorName,
+        "clause": "{{clause}}",
+    }
+
+    doc.render(context)
+    extract_buffer = io.BytesIO()
+    doc.save(extract_buffer)
+    extract_buffer.seek(0)
+
+    extract_buffer = await add_org_brief_to_docx_iso9001_14001(
+        extract_buffer,
+        company_name=audit.organizationName,
+        scope=audit.scope
+    )
+    print("✅ Brief added success")
+
+    extracted_rows = extract_stage1_audit_clause_table(extract_buffer)
+    extracted_rows = update_cnc_placeholders_stage1(extracted_rows)
+    print(extracted_rows)
+
+    pattern_name, pattern_desc, clause_map, prompt_table = choose_document_pattern_stage1(forced_pattern_name)
+
+    batches = split_into_batches(extracted_rows, batch_size=10)
+    updated_rows = []
+    mistral_api_url = "https://mistral-api-v2.onrender.com/api/mistral"
+    headers = {"Content-Type": "application/json"}
+    MAX_RETRIES = 3
+
+    # Step 4: Send batches to LLM for evidence rephrasing
+    for i, batch in enumerate(batches):
+        print(f"🔄 Sending batch {i + 1}/{len(batches)}")
+        prompt = generate_prompt_for_stage1(
+            batch, audit, clause_map, prompt_table, pattern_desc,
+        )
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                async with httpx.AsyncClient(timeout=300.0) as client:
+                    response = await client.post(
+                        mistral_api_url, json={"prompt": prompt}, headers=headers
+                    )
+                    response.raise_for_status()
+                    rephrased_text = (
+                        response.json().get("response", "")
+                        if response.headers.get("content-type", "").startswith("application/json")
+                        else response.text
+                    )
+                    batch_result = ensure_list_of_dicts(rephrased_text)
+                    updated_rows.extend(batch_result)
+                    print(f"✅ Batch {i + 1} succeeded on attempt {attempt}")
+                    break
+            except Exception as e:
+                print(f"⚠️ Batch {i + 1}, attempt {attempt} failed: {e}")
+                if attempt == MAX_RETRIES:
+                    print(f"❌ Batch {i + 1} failed after {MAX_RETRIES} attempts. Skipping.")
+                    continue
+
+    print("✅ All batches completed. Total rows:", len(updated_rows))
+    patched_buffer = patch_docx_by_row_index_stage1(extract_buffer, updated_rows)
+
+    final_doc_bytes = patched_buffer.getvalue()
+
+
+    headers = {
+        "Content-Disposition": f"attachment; filename={audit.organizationName}_iso9001_stage1_report.docx"
+    }
+
+    return Response(
+        content=final_doc_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers=headers,
+    )
+
+
+@router.post("/stage2/submit")
+async def submit_iso9001_stage2(audit: ISO9001Stage2Audit, forced_pattern_name=None):
+
+    # 1. Render base template
+    doc = DocxTemplate("templates/iso9001_stage2.docx")
+    context = {
+        "organizationName": audit.organizationName,
+        "address": audit.address,
+        "siteAddress": audit.siteAddress,
+        "numberOfEmployees": audit.numberOfEmployees,
+        "emailId": audit.emailId,
+        "contactPerson": audit.contactPerson,
+        "telephoneFax": audit.telephoneFax,
+        "scope": audit.scope,
+        "iafCode": audit.iafCode,
+        "auditTeam": "\n".join(audit.auditTeam),
+        "auditManDays": audit.auditManDays,
+        "startDateOfAudit": audit.startDateOfAuditStage2,
+        "endDateOfAudit": audit.endDateOfAuditStage2,
+        "clientName": audit.clientName,
+        "designation": audit.designation,
+        "auditorName": audit.auditorName,
+    }
+    doc.render(context)
+    extract_buffer = io.BytesIO()
+    doc.save(extract_buffer)
+    extract_buffer.seek(0)
+
+    # 2. Extract rows
+    extracted_rows = extract_iso9001_stage2_action_rows(extract_buffer)
+    extracted_rows = update_cnc_placeholders_stage2(extracted_rows)
+    print(extracted_rows)
+
+    # print(f"Extracted {len(extracted_rows)} actionable rows")
+
+    # 3. Select document pattern once
+    pattern_name, pattern_desc, clause_map, prompt_table = choose_document_pattern_stage2(forced_pattern_name)
+
+    # 4. Split into batches
+    batches = split_into_batches(extracted_rows, batch_size=10)
+    updated_rows = []
+    mistral_api_url = "https://mistral-api-v2.onrender.com/api/mistral"
+    headers = {"Content-Type": "application/json"}
+
+    MAX_RETRIES = 3
+    for i, batch in enumerate(batches):
+        print(f"🔄 Sending batch {i + 1}/{len(batches)}")
+        prompt = generate_prompt_for_stage2(batch, audit, clause_map, prompt_table, pattern_desc)
+
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                async with httpx.AsyncClient(timeout=300.0) as client:
+                    response = await client.post(mistral_api_url, json={"prompt": prompt}, headers=headers)
+                    response.raise_for_status()
+
+                    rephrased_text = (
+                        response.json().get("response", "")
+                        if response.headers.get("content-type", "").startswith("application/json")
+                        else response.text
+                    )
+
+                    batch_result = ensure_list_of_dicts(rephrased_text)
+                    updated_rows.extend(batch_result)
+                    print(f"✅ Batch {i + 1} succeeded on attempt {attempt}")
+                    break  # success, exit retry loop
+
+            except Exception as e:
+                print(f"⚠️ Batch {i + 1}, attempt {attempt} failed: {e}")
+                if attempt == MAX_RETRIES:
+                    print(f"❌ Batch {i + 1} failed after {MAX_RETRIES} attempts. Skipping.")
+                    # Optional: you can return a 502 response or just continue
+                    continue
+
+    print("✅ All batches completed. Total rows:", len(updated_rows))
+
+    # 5. Patch into DOCX
+    patched_buffer = patch_docx_by_row_index_stage2(
+        extract_buffer,
+        updated_rows,
+        table_idx=5,
+        data_start_idx=1
+    )
+
+    final_doc_bytes = patched_buffer.getvalue()
+    headers = {
+        "Content-Disposition": f"attachment; filename={audit.organizationName}_iso9001_stage2_report.docx"
+    }
+    return Response(
+        content=final_doc_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers=headers,
+    )
+
+@router.post("/download-both")
+async def download_stage1_and_stage2_reports(payload: CombinedAuditRequest):
+    stage1_audit = payload.stage1_audit
+    stage2_audit = payload.stage2_audit
+
+    # Pick YOUR pattern ONCE, using stage2’s function: (It’s fine for IMS blending)
+    pattern_name, pattern_desc, clause_map, prompt_table = choose_document_pattern_stage2()
+    print("Pattern chosen for both:", pattern_name)
+
+    # Forward that pattern to both generation calls (force them to use the same numbering)
+    stage1_response = await submit_iso9001_stage1(stage1_audit, forced_pattern_name=pattern_name)
+    stage2_response = await submit_iso9001_stage2(stage2_audit, forced_pattern_name=pattern_name)
+
+    # Both responses are FastAPI Response objects; get .body!
+    stage1_bytes = stage1_response.body
+    stage2_bytes = stage2_response.body
+    stage1_filename = f"{stage1_audit.organizationName}_iso9001_stage1.docx"
+    stage2_filename = f"{stage2_audit.organizationName}_iso9001_stage2.docx"
+
+    # Make and return ZIP
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
+        zipf.writestr(stage1_filename, stage1_bytes)
+        zipf.writestr(stage2_filename, stage2_bytes)
+
+    zip_buffer.seek(0)
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": f"attachment; filename={stage1_audit.organizationName}_ims_stage1_and_stage2_reports.zip"
+        },
+    )
