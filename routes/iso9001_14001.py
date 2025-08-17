@@ -9104,7 +9104,6 @@ async def submit_iso9001_stage1(audit: ISO9001_14001Stage1Audit, forced_pattern_
         forced_pattern_name=forced_pattern_name, date_map=date_map
     )
 
-    print(prompt_table)
 
     batches = split_into_batches(rows, batch_size=5)
     updated_rows = []
@@ -9287,7 +9286,6 @@ async def submit_iso9001_stage2(audit: ISO9001_14001Stage2Audit, forced_pattern_
     extracted_rows = extract_audit_table_iso9001_14001_stage2(extract_buffer)
     extracted_rows = mark_na_clauses(extracted_rows, audit.na_clauses)
     extracted_rows = update_cnc_placeholders_stage2(extracted_rows)
-    print(extracted_rows)
 
     pattern_name, pattern_desc, clause_map, prompt_table = choose_document_pattern_stage2(forced_pattern_name=forced_pattern_name, date_map=date_map)
 

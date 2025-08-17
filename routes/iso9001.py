@@ -9059,7 +9059,6 @@ async def submit_iso9001_stage2(audit: ISO9001Stage2Audit, forced_pattern_name=N
     # 2. Extract rows
     extracted_rows = extract_iso9001_stage2_action_rows(extract_buffer)
     extracted_rows = update_cnc_placeholders_stage2(extracted_rows)
-    print(extracted_rows)
 
     # print(f"Extracted {len(extracted_rows)} actionable rows")
 

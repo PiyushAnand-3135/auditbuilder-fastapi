@@ -9139,7 +9139,6 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
         forced_pattern_name=forced_pattern_name, date_map=date_map
     )
 
-    print(prompt_table)
 
     batches = split_into_batches(extracted_rows, batch_size=5)
     updated_rows = []
@@ -9302,8 +9301,6 @@ async def submit_iso45001_stage2(audit : ISO45001Stage2Audit, forced_pattern_nam
     pattern_name, pattern_desc, clause_map, prompt_table = choose_document_pattern_stage2(
         forced_pattern_name=forced_pattern_name, date_map=date_map
     )
-    print("Stage-2 prompt table:")
-    print(prompt_table)
 
     batches = split_into_batches(extracted_rows, batch_size=5)
     updated_rows = []
