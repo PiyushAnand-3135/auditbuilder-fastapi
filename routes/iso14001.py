@@ -9047,6 +9047,8 @@ async def submit_iso14001_stage1(audit: ISO14001Stage1Audit, forced_pattern_name
         forced_pattern_name=forced_pattern_name, date_map=date_map
     )
 
+    print(prompt_table)
+
     batches = split_into_batches(rows, batch_size=5)
     updated_rows = []
     MAX_RETRIES = 3
