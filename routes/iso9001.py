@@ -221,6 +221,23 @@ def patch_docx_by_row_index_stage2(docx_buffer, audit_rows, table_idx=None, data
     - Non-action/heading rows untouched.
     """
     from docx import Document
+    import re
+    from difflib import SequenceMatcher
+
+    def norm_text(s: str) -> str:
+        """Normalize text for reliable comparison (handles dashes & nbsp)."""
+        s = s or ""
+        s = s.replace("\u00A0", " ")  # nbsp -> space
+        s = re.sub(r"[\u2013\u2014–—]", "-", s)  # normalize en/em dashes
+        s = re.sub(r"\s+", " ", s).strip().lower()
+        return s
+
+    def norm_clause(s: str) -> str:
+        """Normalize clause numbers (strip 'clause', trim punctuation/spaces)."""
+        s = norm_text(s)
+        s = s.replace("clause", "").strip(" .")
+        return s
+
     docx_buffer.seek(0)
     doc = Document(docx_buffer)
 
@@ -240,40 +257,95 @@ def patch_docx_by_row_index_stage2(docx_buffer, audit_rows, table_idx=None, data
 
     table = doc.tables[table_idx]
 
-    # --- Build dict for fast lookup (CL + REQ : row) ---
+    # --- Build dict for fast lookup (normalized keys) ---
     audit_map = {}
     for row in audit_rows:
-        key = (row.get("clause_no", "").strip(), row.get("requirements", "").strip())
+        key = (norm_clause(row.get("clause_no", "")), norm_text(row.get("requirements", "")))
         audit_map[key] = row
 
-    # --- Patch actionable rows only ---
+    # Build requirement-only index
+    req_index = {}
+    for (k_clause, k_req), row in audit_map.items():
+        req_index.setdefault(k_req, []).append(row)
+
+    def best_fuzzy_match(norm_req: str, prefer_clause: str | None) -> dict | None:
+        """Fuzzy match requirement text; prefer same clause if provided."""
+        best_score, best_row = 0.0, None
+        for (k_clause, k_req), row in audit_map.items():
+            score = SequenceMatcher(None, norm_req, k_req).ratio()
+            if prefer_clause and prefer_clause == k_clause:
+                score += 0.05  # small nudge for clause alignment
+            if score > best_score:
+                best_score, best_row = score, row
+        # Accept only reasonably close matches
+        return best_row if best_score >= 0.78 else None
+
     patched_count = 0
+    used_keys = set()
+    last_clause_no = ""  # for merged/blank clause carrying forward
+
+    # --- Patch actionable rows only ---
     for trow in table.rows[data_start_idx:]:
         if len(trow.cells) < 4:
             continue
-        clause_no = trow.cells.text.strip()
+        clause_no = trow.cells[0].text.strip()
         requirements = trow.cells[1].text.strip()
+
+        if clause_no:
+            last_clause_no = clause_no  # update carry-forward state
+        else:
+            clause_no = last_clause_no  # use previous if blank
+
         if requirements and (requirements.lstrip().startswith("-") or "?" in requirements):
-            # Direct match on clause and requirement text
-            arow = audit_map.get((clause_no, requirements))
+            norm_c = norm_clause(clause_no)
+            norm_r = norm_text(requirements)
+
+            # 1) Exact (clause + requirement)
+            arow = audit_map.get((norm_c, norm_r))
+
+            # 2) Exact requirement-only (prefer same clause among candidates)
             if not arow:
-                # If clause no merged upwards (empty), search by requirements only
-                for (k_clause, k_req), v in audit_map.items():
-                    if requirements == k_req:
-                        arow = v
-                        break
+                candidates = req_index.get(norm_r, [])
+                if candidates:
+                    for cand in candidates:
+                        if norm_clause(cand.get("clause_no", "")) == norm_c:
+                            arow = cand
+                            break
+                    if not arow:
+                        arow = candidates[0]
+
+            # 3) Fuzzy requirement match
             if not arow:
-                continue   # No matching audit finding, skip
-            # Patch all 4 columns (preserving formatting)
+                arow = best_fuzzy_match(norm_r, prefer_clause=norm_c)
+
+            if not arow:
+                continue
+
+            # Avoid double-using the same row
+            match_key = (norm_clause(arow.get("clause_no", "")), norm_text(arow.get("requirements", "")))
+            if match_key in used_keys:
+                continue
+            used_keys.add(match_key)
+
+            # Patch all 4 columns
             columns = ["clause_no", "requirements", "c/nc/o", "evidence"]
             for col_idx, key in enumerate(columns):
                 trow.cells[col_idx].text = str(arow.get(key, ""))
             patched_count += 1
-        # Non-action rows are left untouched
 
-    # Optional: Logging for mismatches
+    # --- Logging ---
     if patched_count < len(audit_rows):
         print(f"⚠️ Not all audit_rows patched ({patched_count} of {len(audit_rows)})")
+        # Show a few unmatched examples
+        unmatched = []
+        for row in audit_rows:
+            mk = (norm_clause(row.get("clause_no", "")), norm_text(row.get("requirements", "")))
+            if mk not in used_keys:
+                unmatched.append(f"{row.get('clause_no','')} | {row.get('requirements','')[:100]}")
+        if unmatched:
+            print("[DEBUG] Examples of unmatched audit_rows:")
+            for ex in unmatched[:5]:
+                print("  -", ex)
     elif patched_count > len(audit_rows):
         print(f"⚠️ More table rows patched than audit_rows ({patched_count} > {len(audit_rows)})")
 
@@ -282,7 +354,6 @@ def patch_docx_by_row_index_stage2(docx_buffer, audit_rows, table_idx=None, data
     doc.save(docx_buffer)
     docx_buffer.seek(0)
     return docx_buffer
-
 
 def split_into_batches(data, batch_size=5):
     return [data[i:i + batch_size] for i in range(0, len(data), batch_size)]
