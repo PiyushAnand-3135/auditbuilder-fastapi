@@ -9199,6 +9199,8 @@ async def generate_completed_corrective_actions(stage1_minor_nc_store, scope_tex
             "Output only a concise, plain-English paragraph of 2-4 sentences describing what was done, "
             "including any implementation and verification. "
             "Do NOT return JSON, bullet points, lists, or code fences — just the text description."
+            "The output must be in strict plain text — no markdown, no bold (**), italics (*), underscores (_), bullet symbols from markdown (- or * as formatting), tables, headings, or any other non-standard formatting."
+            "Do not generate any special characters used for styling in markdown (such as *, _, `, >, |, ~, #, [], ())."
         )
         async with httpx.AsyncClient(timeout=60.0) as client:
             resp = await client.post(mistral_api_url, json={"prompt": prompt}, headers=headers)
