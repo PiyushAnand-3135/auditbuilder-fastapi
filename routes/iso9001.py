@@ -4325,9 +4325,7 @@ async def transfer_stage1_observations_to_stage2_doc(patched_buffer, audit, mist
     return patched_buffer
 
 
-
 # =========================== ISO:9001 STAGE 1 FUNCTIONS START HERE ===================================================================
-
 
 def mark_na_clauses(extracted_data, na_clauses):
     """
