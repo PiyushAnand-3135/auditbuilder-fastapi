@@ -142,7 +142,7 @@ DO NOT mention ISO, certifications, standards, quality/environmental compliance,
 - IMS Scope: {scope}
 
 Output ONLY the brief text itself — do NOT include code block formatting, preface, or output as JSON. Output only the brief.
-output only plain paragraph no text no json.
+output only plain paragraph no markdown, no punctuations like * or ** no json.
     """
 
     # 2. Call Mistral API
@@ -4246,17 +4246,19 @@ STRICT and REDUNDANT RULES (do NOT break them):
 - If you see a general description with NO specific documents, simply generate evidence without referring to any document at all.
 
 ### Instructions for Report Writing:
+- For each clause, the answer must be concise and limited to approximately 80 to 100 words, including only the necessary information relevant to the clause and documents.
 - You are to ONLY update the 'Document Verification detail with statement of Conformity' field of each item in the input list.
 - DO NOT change or remove any keys like 'Cl. No', 'Description', or 'C/NC/O'.
-- If the "C/NC/O" value is "C", write the evidence as a professional, positive confirmation that OHSMS/QMS/EMS/OHS requirements for this clause are met, referencing the relevant ISO 9001/14001:2015/45001:2018 clauses and ONLY the document(s) listed for that clause. Avoid repeatedly stating generic phrases such as "the clause meets requirements" or "this clause is compliant"; show this through the presented evidence instead.
+- If the "C/NC/O" value is "C", write the evidence as a professional, positive confirmation that OHSMS/ requirements for this clause are met, referencing the relevant ISO 9001/14001:2015/45001:2018 clauses and ONLY the document(s) listed for that clause. Avoid repeatedly stating generic phrases such as "the clause meets requirements" or "this clause is compliant"; show this through the presented evidence instead.
 - If "C/NC/O" is "NC", document a specific nonconformity—clearly stating what is not conforming, referencing ONLY the relevant clause and document(s) listed for that clause.
 - If "C/NC/O" is "O", rephrase neutrally as an observation, referencing ONLY the clause and relevant document(s) listed for that clause.
 - For each clause, reference strictly and exclusively the exact documents from the chosen `choose_document_pattern_*` output for that clause. Do NOT include or invent any document numbers, names, or forms not present in the mapping for that clause.
 - Maintain the input order; do not reformat or change any field except 'Document Verification detail with statement of Conformity'.
 - For entries where the 'Description' field includes multiple questions, provide a detailed, structured answer addressing each question in order.
 - Insert a blank line between each clause's answer for clarity (two newlines between answers).
-- Responses should align with best practices for ISO 9001/14001/45001 Stage 1 OHSMS audits, referencing roles and documents naturally.
+- Responses should align with best practices for ISO 45001 Stage 1 OHSMS audits, referencing roles and documents naturally.
 - If 'C/NC/O' or 'Document Verification...' is 'NA', do not fill in or modify the field.
+
 
 
 ### ABSOLUTE FORMATTING RULES (PLAIN TEXT ONLY – STRICT):
@@ -8359,10 +8361,9 @@ You are an ISO 45001:2018 Occupational Health & Safety Management System (OH&SMS
 Use the following document numbering format throughout all evidence:
 **Pattern**: {pattern_desc}
 When referencing documents, use ONLY the document NAME and NUMBER as provided in the input table for each clause.
-- If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-OHSMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report.Only do this when document pattern starts with XXX . Dont do this if its just F-X or P-X.
+- Only and only If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-OHSMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report.
 - Dont modify the document number or details randomly.
-**If a document number has a prefix (e.g., "XXX" or "BLPL"), replace it with the initials of the organization's name
-(e.g., "Eco Solutions Pvt Ltd" → "ESPL-IMS-F-01"). If initials are unclear, use the first letter of each word.**
+
 
 {prompt_table_md}
 
@@ -8406,6 +8407,7 @@ Below is the list of personnel present during the audit. Use these names accurat
 ---
 
 ### Instructions for ISO 45001:2018 Stage 2 OH&SMS Report Writing:
+- For each clause, the answer must be concise and limited to approximately 80 to 100 words, including only the necessary information relevant to the clause and documents.
 - Only update the 'evidence' field of each input item.
 - Do NOT alter or remove any other fields (e.g., 'Cl. No', 'Description', 'C/NC/O').
 - For 'C' (Conformity): Rephrase the "evidence" as a factual, positive confirmation that requirements of ISO 45001:2018 for that clause are met, referencing only the clause(s) (e.g., 4.3, 7.2) and any relevant listed document(s).

@@ -289,6 +289,7 @@ Below is the list of personnel present during the audit. Use these names accurat
 ---
 
 ### Instructions for Report Writing:
+- For each clause, the answer must be concise and limited to approximately 80 to 100 words, including only the necessary information relevant to the clause and documents.
 - You are to ONLY update the 'evidence' field of each item in the input list.
 - DO NOT change or remove any keys like 'clause_no', 'requirements', or 'c/nc/o'.
 - If the "c/nc/o" value is "C", rephrase the "evidence" as a professional, positive confirmation that the environmental management system requirements are met, referencing relevant ISO 14001:2015 clauses and appropriate document(s).
@@ -4484,6 +4485,7 @@ IMPORTANT:
 - Any rows marked "NA" must be left unchanged—leave their evidence and status untouched.
 
 Instructions for Report Writing:
+- For each clause, the answer must be concise and limited to approximately 80 to 100 words, including only the necessary information relevant to the clause and documents.
 - ONLY update the "Document Verification detail with statement of Conformity" field in each dictionary.
 - When referencing documents as evidence, always use their names and numbers exactly as provided in the table above.
 - If "C/NC/O" is "C": Confirm compliance, citing the correct document numbers/names.

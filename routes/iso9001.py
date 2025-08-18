@@ -411,6 +411,7 @@ def generate_prompt_for_stage2(batch, audit, clause_map, prompt_table_md, patter
     - Any output that contains forbidden formatting is invalid.
 
     ### Instructions for Report Writing:
+    - For each clause, the answer must be concise and limited to approximately 80 to 100 words, including only the necessary information relevant to the clause and documents.
     - You are to ONLY update the 'evidence' field of each item in the input list.
     - DO NOT change or remove any keys like 'clause_no', 'requirements', 'c/nc/o'.
     - If the "C/NC/O" value is "C", rephrase the "Document Verification detail with statement of Conformity" as a professional positive confirmation. 
@@ -8448,10 +8449,9 @@ You are an audit reporting assistant for an **ISO 9001:2015 Stage 1 Quality Mana
 Use the following document numbering format throughout the report:  
 **Pattern**: {pattern_desc}  
 When mentioning any document as evidence, you **MUST** always use its name and number from the table below.  
-If a document number has a prefix like `"XXX"` or `"BLPL"` (e.g., `"XXX-QMS-F-01"`), you **MUST** replace the prefix with the initials of the organization's name when writing the report.
-- Only do this when document pattern has XXX in it. Dont do this if its just F-X or P-X
-- For example, if the organization's name is "Eco Solutions Pvt Ltd", then you must use "ESPL-QMS-F-01" instead of "XXX-QMS-F-01".
-- This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.
+When mentioning any document as evidence, use its name and number from the table below.  
+    If a document number has a prefix like "XXX" or "BLPL", replace it with the initials of the organization's name
+    (e.g., "Inzinc Consulting LLC" → "ICL-IMS-F-01"). If initials are unclear, use the first letter of each word.
 - The correct initials to use for this organization are: **{audit.organizationName}**.
 - Dont mention again and again that the following document is according to ISO:9001 clause requirement.
 {prompt_table_md}
@@ -8492,6 +8492,7 @@ List of personnel in attendance. Use these names accurately while writing eviden
 - In short: **Never make up or combine document titles, forms, or numbers. Reference every document listed in the input for the clause, and nothing else.**
 
 ### Instructions for Report Writing:
+- For each clause, the answer must be concise and limited to approximately 80 to 100 words, including only the necessary information relevant to the clause and documents.
 - You are to ONLY update the 'Document Verification detail with statement of Conformity' field of each item in the input list.
 - DO NOT change or remove any keys like 'Cl. No', 'Description', or 'C/NC/O'.
 - If the "C/NC/O" value is "C", rephrase the "Document Verification..." as a professional, positive confirmation that QMS requirements for this clause are met, referencing relevant ISO 9001:2015 clauses and appropriate document(s).

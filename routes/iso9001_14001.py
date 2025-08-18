@@ -456,6 +456,7 @@ Below is the list of personnel present during the audit. Use these names accurat
 ---
 
 ### Instructions for IMS Stage 2 Report Writing:
+- For each clause, the answer must be concise and limited to approximately 80 to 100 words, including only the necessary information relevant to the clause and documents.
 - Only update the 'evidence' field of each input item.
 - Do NOT alter or remove any other fields (e.g., 'Cl. No', 'Description', 'C/NC/O').
 - For 'C' (Conformity): Rephrase the "evidence" as a factual, positive confirmation that requirements of ISO 9001:2015 and/or ISO 14001:2015 for that clause are met, referencing only the clause(s) (e.g., 4.3, 7.2) and any relevant listed document(s).
@@ -4601,6 +4602,7 @@ List of personnel in attendance. Use these names accurately while writing eviden
 - Use document dates as specified in the prompt table. Dont generate dates randomly.
 
 ### Instructions for Report Writing:
+- For each clause, the answer must be concise and limited to approximately 80 to 100 words, including only the necessary information relevant to the clause and documents.
 - You are to ONLY update the 'Document Verification detail with statement of Conformity' field of each item in the input list.
 - DO NOT change or remove any keys like 'Cl. NO', 'Description', or 'C/NC/O'.
 - If the "C/NC/O" value is "C", rephrase the "Document Verification..." as a professional, positive confirmation that IMS/QMS/EMS requirements for this clause are met, referencing relevant ISO 9001/14001:2015 clauses and appropriate document(s).
