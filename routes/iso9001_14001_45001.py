@@ -9818,14 +9818,27 @@ async def download_stage1_and_stage2_reports(payload: CombinedAuditRequest):
 
     print("Pattern chosen for both:", pattern_name)
 
-    # Forward that pattern to both generation calls (force them to use the same numbering)
+    # Forward that pattern to both generation calls
     stage1_response = await submit_iso14001_stage1(stage1_audit, forced_pattern_name=pattern_name, date_map=date_map)
     await asyncio.sleep(2)
     stage2_response = await submit(stage2_audit, forced_pattern_name=pattern_name, date_map=date_map)
 
-    # Both responses are FastAPI Response objects; get .body!
-    stage1_bytes = stage1_response.body
-    stage2_bytes = stage2_response.body
+    # --- Safe extraction of bytes regardless of return type ---
+    def extract_bytes(resp):
+        if resp is None:
+            return b""
+        if hasattr(resp, "body"):           # FastAPI Response
+            return resp.body
+        if hasattr(resp, "content"):        # httpx.Response
+            return resp.content
+        if isinstance(resp, dict):          # Our code returned dict
+            # adjust key if different in your dict
+            return resp.get("file") or resp.get("content") or b""
+        return bytes(resp) if isinstance(resp, (bytes, bytearray)) else b""
+
+    stage1_bytes = extract_bytes(stage1_response)
+    stage2_bytes = extract_bytes(stage2_response)
+
     stage1_filename = f"{stage1_audit.organizationName}_iso9001_14001_45001_stage1.docx"
     stage2_filename = f"{stage2_audit.organizationName}_iso9001_14001_45001_stage2.docx"
 
@@ -9843,4 +9856,5 @@ async def download_stage1_and_stage2_reports(payload: CombinedAuditRequest):
             "Content-Disposition": "attachment"
         },
     )
+
 
