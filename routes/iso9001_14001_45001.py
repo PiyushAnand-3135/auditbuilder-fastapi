@@ -9417,7 +9417,7 @@ async def submit_iso14001_stage1(audit: ISO9001_14001_45001Stage1Audit, forced_p
     )
     print("✅ breif added success")
 
-    await asyncio.sleep(1.5)
+    await asyncio.sleep(2)
 
     extract_buffer = await add_legal_requirements_to_docx_iso9001_14001_mistral(
         extract_buffer,
@@ -9474,7 +9474,7 @@ async def submit_iso14001_stage1(audit: ISO9001_14001_45001Stage1Audit, forced_p
                     updated_rows.extend(batch_result)
                     print(f"✅ Batch {i + 1} succeeded on attempt {attempt}")
                     # <-- Throttle here to reduce burst calls -->
-                    await asyncio.sleep(1.5)  # e.g., 1.5-second pause between batches
+                    await asyncio.sleep(2)  # e.g., 1.5-second pause between batches
 
                     break
             except Exception as e:
@@ -9490,7 +9490,7 @@ async def submit_iso14001_stage1(audit: ISO9001_14001_45001Stage1Audit, forced_p
 
     patched_buffer = patch_docx_by_row_index_stage1(extract_buffer, updated_rows)
 
-    await asyncio.sleep(1.5)
+    await asyncio.sleep(2)
 
     # ---- MINOR NC Extraction, Summarization, and Table Patch -------
     minor_nc_rows = extract_minor_nc_rows(updated_rows)
@@ -9533,7 +9533,7 @@ async def submit_iso14001_stage1(audit: ISO9001_14001_45001Stage1Audit, forced_p
     print("[DEBUG][Stage1] stage1_minor_nc_store after saving:", stage1_minor_nc_store)
     print("[DEBUG][Stage1] stage1_minor_nc_store length:", len(stage1_minor_nc_store))
 
-    await asyncio.sleep(1.5)
+    await asyncio.sleep(2)
 
     # ---- OBSERVATION Extraction, Summarization, and Table Patch -------
     obs_rows = extract_observation_rows(updated_rows)
@@ -9631,7 +9631,7 @@ async def submit(audit: ISO9001_14001_45001Stage2Audit, forced_pattern_name=None
     )
     print("✅ breif added success")
 
-    await asyncio.sleep(1.5)
+    await asyncio.sleep(2)
 
     extract_buffer = await add_legal_requirements_to_docx_iso9001_14001_mistral(
         extract_buffer,
@@ -9640,7 +9640,7 @@ async def submit(audit: ISO9001_14001_45001Stage2Audit, forced_pattern_name=None
     )
     print("✅ laws added success")
 
-    await asyncio.sleep(1.5)
+    await asyncio.sleep(2)
 
     extract_buffer = await add_work_process_to_docx_iso9001_14001_mistral(
         extract_buffer,
@@ -9649,7 +9649,7 @@ async def submit(audit: ISO9001_14001_45001Stage2Audit, forced_pattern_name=None
     )
     print("✅ Work process added successfully")
 
-    await asyncio.sleep(1.5)
+    await asyncio.sleep(2)
 
     extract_buffer = await add_infrastructure_about_to_docx_iso9001_14001(
         extract_buffer,
@@ -9658,7 +9658,7 @@ async def submit(audit: ISO9001_14001_45001Stage2Audit, forced_pattern_name=None
     )
     print("✅ Infrastructure added success")
 
-    await asyncio.sleep(1.5)
+    await asyncio.sleep(2)
 
     extract_buffer = await add_materials_handled_to_docx_iso9001_14001(
         extract_buffer,
@@ -9667,7 +9667,7 @@ async def submit(audit: ISO9001_14001_45001Stage2Audit, forced_pattern_name=None
     )
     print("✅ Materials added success")
 
-    await asyncio.sleep(1.5)
+    await asyncio.sleep(2)
 
     extract_buffer = await add_major_equipment_to_docx_iso9001_14001(
         extract_buffer,
@@ -9713,7 +9713,7 @@ async def submit(audit: ISO9001_14001_45001Stage2Audit, forced_pattern_name=None
                                 row[key] = remove_markdown_styling(row[key])
                     updated_rows.extend(batch_result)
                     print(f"✅ Batch {i + 1} succeeded on attempt {attempt}")
-                    await asyncio.sleep(1.5)
+                    await asyncio.sleep(2)
                     break
             except Exception as e:
                 print(f"⚠️ Batch {i + 1}, attempt {attempt} failed: {e}")
@@ -9736,7 +9736,7 @@ async def submit(audit: ISO9001_14001_45001Stage2Audit, forced_pattern_name=None
         patched_buffer, audit, mistral_api_url, headers
     )
 
-    await asyncio.sleep(1.5)
+
 
     # ---- MINOR NC Extraction, Summarization, and Table Patch -------
     minor_nc_rows = extract_minor_nc_rows(updated_rows)
@@ -9744,6 +9744,7 @@ async def submit(audit: ISO9001_14001_45001Stage2Audit, forced_pattern_name=None
     MAX_RETRIES = 3  # Robust retry logic for LLM query
     if minor_nc_rows:
         summary_prompt = build_minor_nc_summary_prompt(minor_nc_rows)
+        await asyncio.sleep(2)
         for attempt in range(1, MAX_RETRIES + 1):
             try:
                 async with httpx.AsyncClient(timeout=60.0) as client:
@@ -9767,10 +9768,10 @@ async def submit(audit: ISO9001_14001_45001Stage2Audit, forced_pattern_name=None
                     continue  # Retry
 
     # ---------------------------------------------------------------
-    await asyncio.sleep(1.5)
     # ---- OBSERVATION Extraction, Summarization, and Table Patch -------
     obs_rows = extract_observation_rows(updated_rows)
     if obs_rows:
+        await asyncio.sleep(2)
         summary_prompt_obs = build_observation_summary_prompt(obs_rows)
         MAX_RETRIES = 3
         for attempt in range(1, MAX_RETRIES + 1):
@@ -9819,7 +9820,7 @@ async def download_stage1_and_stage2_reports(payload: CombinedAuditRequest):
 
     # Forward that pattern to both generation calls (force them to use the same numbering)
     stage1_response = await submit_iso14001_stage1(stage1_audit, forced_pattern_name=pattern_name, date_map=date_map)
-    await asyncio.sleep(1.5)
+    await asyncio.sleep(2)
     stage2_response = await submit(stage2_audit, forced_pattern_name=pattern_name, date_map=date_map)
 
     # Both responses are FastAPI Response objects; get .body!
