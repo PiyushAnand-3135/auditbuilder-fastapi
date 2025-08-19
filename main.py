@@ -18,7 +18,7 @@ app = FastAPI(
 # CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Change to your frontend domain for security
+    allow_origins=["http://report-frontend-dm1bya-519963-31-97-117-80.traefik.me"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
