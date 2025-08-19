@@ -124,7 +124,7 @@ async def add_org_brief_to_docx_iso9001_14001(
     docx_buffer,
     company_name,
     scope,
-    mistral_url="https://mistral-api-v2.onrender.com/api/mistral"
+    mistral_url="http://report-nodeapi-mzwh8q-acabe5-31-97-117-80.traefik.me/"
 ):
     """
     Calls Mistral for an organization brief and inserts it into the IMS (ISO 9001+14001) DOCX stage 1 cell.
@@ -207,7 +207,7 @@ async def add_legal_requirements_to_docx_iso9001_14001_mistral(
     docx_buffer,
     address,
     scope,
-    mistral_url="https://mistral-api-v2.onrender.com/api/mistral"
+    mistral_url="http://report-nodeapi-mzwh8q-acabe5-31-97-117-80.traefik.me/"
 ):
     """
     Calls Mistral LLM for Legal, Statutory & Regulatory Requirements relevant to IMS (ISO 9001 & 14001),
@@ -8552,7 +8552,7 @@ async def add_major_equipment_to_docx_iso9001_14001(
     docx_buffer,
     company_name,
     scope,
-    mistral_url="https://mistral-api-v2.onrender.com/api/mistral"
+    mistral_url="http://report-nodeapi-mzwh8q-acabe5-31-97-117-80.traefik.me/"
 ):
     """
     Calls Mistral for a summary of major equipment used, and inserts it into the IMS (ISO 9001+14001) DOCX in the correct cell.
@@ -8634,7 +8634,7 @@ async def add_infrastructure_about_to_docx_iso9001_14001(
     docx_buffer,
     company_name,
     scope,
-    mistral_url="https://mistral-api-v2.onrender.com/api/mistral",
+    mistral_url="http://report-nodeapi-mzwh8q-acabe5-31-97-117-80.traefik.me/",
     use_random=False  # New kwarg to control random data generation
 ):
     """
