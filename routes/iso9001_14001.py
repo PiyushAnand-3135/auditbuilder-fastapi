@@ -4394,7 +4394,7 @@ async def add_legal_requirements_to_docx_iso9001_14001_mistral(
     docx_buffer,
     address,
     scope,
-    mistral_url="https://report-nodeapi-mzwh8q-7abe57-31-97-117-80.traefik.me/api/mistral/"
+    mistral_url="https://nodeapi.accuratereport.org/api/mistral/"
 ):
     """
     Calls Mistral LLM for Legal, Statutory & Regulatory Requirements relevant to IMS (ISO 9001 & 14001),
@@ -4458,7 +4458,7 @@ async def add_org_brief_to_docx_iso9001_14001(
     docx_buffer,
     company_name,
     scope,
-    mistral_url="https://report-nodeapi-mzwh8q-7abe57-31-97-117-80.traefik.me/api/mistral/"
+    mistral_url="https://nodeapi.accuratereport.org/api/mistral/"
 ):
     """
     Calls Mistral for an organization brief and inserts it into the IMS (ISO 9001+14001) DOCX stage 1 cell.
@@ -8783,7 +8783,7 @@ async def add_work_process_to_docx_iso9001_14001_mistral(
     docx_buffer,
     company_name,
     scope,
-    mistral_url="https://report-nodeapi-mzwh8q-7abe57-31-97-117-80.traefik.me/api/mistral/"
+    mistral_url="https://nodeapi.accuratereport.org/api/mistral/"
 ):
     """
     Calls Mistral for a work process flow based on the company's scope and inserts it
@@ -8871,7 +8871,7 @@ async def add_materials_handled_to_docx_iso9001_14001(
     docx_buffer,
     company_name,
     scope,
-    mistral_url="https://report-nodeapi-mzwh8q-7abe57-31-97-117-80.traefik.me/api/mistral/"
+    mistral_url="https://nodeapi.accuratereport.org/api/mistral/"
 ):
     """
     Calls Mistral for a summary of materials handled and consumed, and inserts it into the IMS (ISO 9001+14001) DOCX in the correct cell.
@@ -8953,7 +8953,7 @@ async def add_major_equipment_to_docx_iso9001_14001(
     docx_buffer,
     company_name,
     scope,
-    mistral_url="https://report-nodeapi-mzwh8q-7abe57-31-97-117-80.traefik.me/api/mistral/"
+    mistral_url="https://nodeapi.accuratereport.org/api/mistral/"
 ):
     """
     Calls Mistral for a summary of major equipment used, and inserts it into the IMS (ISO 9001+14001) DOCX in the correct cell.
@@ -9109,7 +9109,7 @@ async def submit_iso9001_stage1(audit: ISO9001_14001Stage1Audit, forced_pattern_
 
     batches = split_into_batches(rows, batch_size=5)
     updated_rows = []
-    mistral_api_url = "https://report-nodeapi-mzwh8q-7abe57-31-97-117-80.traefik.me/api/mistral/"
+    mistral_api_url = "https://nodeapi.accuratereport.org/api/mistral/"
     headers = {"Content-Type": "application/json"}
     MAX_RETRIES = 3
 
@@ -9293,7 +9293,7 @@ async def submit_iso9001_stage2(audit: ISO9001_14001Stage2Audit, forced_pattern_
 
     batches = split_into_batches(extracted_rows, batch_size=5)
     updated_rows = []
-    mistral_api_url = "https://report-nodeapi-mzwh8q-7abe57-31-97-117-80.traefik.me/api/mistral/"
+    mistral_api_url = "https://nodeapi.accuratereport.org/api/mistral/"
     headers = {"Content-Type": "application/json"}
     MAX_RETRIES = 3
     for i, batch in enumerate(batches):
