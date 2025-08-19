@@ -9144,7 +9144,7 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
 
     batches = split_into_batches(extracted_rows, batch_size=5)
     updated_rows = []
-    mistral_api_url = "https://mistral-api-v2.onrender.com/api/mistral"
+    mistral_api_url = "http://report-nodeapi-mzwh8q-acabe5-31-97-117-80.traefik.me/"
     headers = {"Content-Type": "application/json"}
     MAX_RETRIES = 3
 
@@ -9306,7 +9306,7 @@ async def submit_iso45001_stage2(audit : ISO45001Stage2Audit, forced_pattern_nam
 
     batches = split_into_batches(extracted_rows, batch_size=5)
     updated_rows = []
-    mistral_api_url = "https://mistral-api-v2.onrender.com/api/mistral"
+    mistral_api_url = "http://report-nodeapi-mzwh8q-acabe5-31-97-117-80.traefik.me/"
     headers = {"Content-Type": "application/json"}
     MAX_RETRIES = 3
     for i, batch in enumerate(batches):
