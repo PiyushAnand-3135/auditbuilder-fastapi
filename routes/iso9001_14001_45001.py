@@ -327,7 +327,6 @@ async def add_legal_requirements_to_docx_iso9001_14001_mistral(
     Calls Mistral LLM for Legal, Statutory & Regulatory Requirements relevant to IMS (ISO 9001 & 14001),
     and inserts the up-to-date law list into the correct cell in the docx buffer.
     """
-    # 1. Prompt (for IMS: quality + environment)
     legal_prompt = f"""
 You are an ISO 9001 (quality management) and ISO 14001 (environmental management) integrated management system (IMS) audit assistant.
 
@@ -343,18 +342,29 @@ Company Address: {address}
 IMS Scope: {scope}
     """
 
-    # 2. Call Mistral API
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        api_response = await client.post(
-            mistral_url,
-            json={"prompt": legal_prompt},
-            headers={"Content-Type": "application/json"}
-        )
-        api_response.raise_for_status()
-        if api_response.headers.get("content-type", "").startswith("application/json"):
-            law_list = api_response.json().get("response", "") or api_response.text
-        else:
-            law_list = api_response.text
+    # === Retry Logic ===
+    max_retries = 3
+    delay = 2
+    for attempt in range(1, max_retries + 1):
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                api_response = await client.post(
+                    mistral_url,
+                    json={"prompt": legal_prompt},
+                    headers={"Content-Type": "application/json"}
+                )
+                api_response.raise_for_status()
+                if api_response.headers.get("content-type", "").startswith("application/json"):
+                    law_list = api_response.json().get("response", "") or api_response.text
+                else:
+                    law_list = api_response.text
+            break  # Success, break out of retry loop
+        except Exception as e:
+            if attempt == max_retries:
+                raise  # re-raise last error after max attempts
+            await asyncio.sleep(delay)
+            delay *= 2  # Exponential backoff
+
     law_list = law_list.strip()
     law_list = clean_llm_law_list(law_list)  # Reuse your clean-up function for formatting
 
@@ -385,13 +395,15 @@ async def add_org_brief_to_docx_iso9001_14001(
     docx_buffer,
     company_name,
     scope,
-    mistral_url="https://nodeapi.accuratereport.org/api/mistral/"
+    mistral_url="https://nodeapi.accuratereport.org/api/mistral/",
+    max_retries=3,
+    retry_delay=2.0,  # seconds
 ):
     """
     Calls Mistral for an organization brief and inserts it into the IMS (ISO 9001+14001) DOCX stage 1 cell.
     Only the actual business/activities brief will appear (no JSON, no standards mention).
     """
-    # 1. Strict, ISO-agnostic prompt
+
     brief_prompt = f"""
 You are writing the opening organization summary for an IMS (ISO 9001/14001) Stage 1 audit report.
 
@@ -403,22 +415,38 @@ DO NOT mention ISO, certifications, standards, quality/environmental compliance,
 - IMS Scope: {scope}
 
 Output ONLY the brief text itself — do NOT include code block formatting, preface, or output as JSON. Output only the brief.
-    output only plain paragraph no text no json no markdown at all.
-    """
+output only plain paragraph no text no json no markdown at all.
+"""
 
-    # 2. Call Mistral API
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        api_response = await client.post(
-            mistral_url,
-            json={"prompt": brief_prompt},
-            headers={"Content-Type": "application/json"}
-        )
-        api_response.raise_for_status()
-        if api_response.headers.get("content-type", "").startswith("application/json"):
-            result = api_response.json()
-            brief_string = result.get("response", "") or str(result)
-        else:
-            brief_string = api_response.text
+    # 2. Call Mistral API with retry logic
+    attempt = 0
+    last_exception = None
+    brief_string = None
+    import httpx
+
+    while attempt < max_retries:
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                api_response = await client.post(
+                    mistral_url,
+                    json={"prompt": brief_prompt},
+                    headers={"Content-Type": "application/json"}
+                )
+                api_response.raise_for_status()
+                if api_response.headers.get("content-type", "").startswith("application/json"):
+                    result = api_response.json()
+                    brief_string = result.get("response", "") or str(result)
+                else:
+                    brief_string = api_response.text
+            break  # Success, exit retry loop
+        except Exception as e:
+            attempt += 1
+            last_exception = e
+            if attempt < max_retries:
+                await asyncio.sleep(retry_delay)
+            else:
+                raise  # Reraise last exception after retries exhausted
+
     brief_string = brief_string.strip()
 
     # 3. Robust extraction from all weird result formats
@@ -434,7 +462,6 @@ Output ONLY the brief text itself — do NOT include code block formatting, pref
     if brief_string.startswith("``````"):
         brief_string = brief_string.strip("`").strip()
     # Defensive: remove any lines about ISO or "standard"
-    import re
     brief_string = "\n".join([
         line for line in brief_string.splitlines()
         if not re.search(r'(ISO ?9|ISO ?1|14001|certifi|standard|compliance)', line, re.I)
@@ -9346,6 +9373,7 @@ async def submit_iso14001_stage1(audit: ISO9001_14001_45001Stage1Audit, forced_p
         scope=audit.scope
     )
     print("✅ breif added success")
+
     extract_buffer = await add_legal_requirements_to_docx_iso9001_14001_mistral(
         extract_buffer,
         address=audit.address,
