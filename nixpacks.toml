@@ -1,12 +1,11 @@
-providers = ["...", "python"]
+providers = ["python"]
 
 [phases.setup]
-# '...' ensures Python (and any default setup) is also included
-nixPkgs = ["..."]
+nixPkgs = ["python311"]
 
 [phases.install]
 cmds = [
-  "pip install --upgrade pip",
+  "python -m pip install --upgrade pip",
   "pip install -r requirements.txt"
 ]
 
@@ -14,4 +13,4 @@ cmds = [
 cmd = "uvicorn main:app --host 0.0.0.0 --port 8082"
 
 [variables]
-PORT = "8081"
+PORT = "8082"
