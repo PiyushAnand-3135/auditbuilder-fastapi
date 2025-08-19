@@ -15,10 +15,14 @@ app = FastAPI(
     description="API for audit-builder reports"
 )
 
+origins = [
+    "http://report-frontend-dm1bya-519963-31-97-117-80.traefik.me",
+]
+
 # CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://report-frontend-dm1bya-519963-31-97-117-80.traefik.me"],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
