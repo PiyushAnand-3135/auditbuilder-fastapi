@@ -9445,7 +9445,7 @@ async def submit_iso14001_stage1(audit: ISO9001_14001_45001Stage1Audit, forced_p
     updated_rows = []
     mistral_api_url = "https://nodeapi.accuratereport.org/api/mistral/"
     headers = {"Content-Type": "application/json"}
-    MAX_RETRIES = 3
+    MAX_RETRIES = 5
 
     # Step 4: Send batches to LLM for evidence rephrasing
     for i, batch in enumerate(batches):
@@ -9686,7 +9686,7 @@ async def submit(audit: ISO9001_14001_45001Stage2Audit, forced_pattern_name=None
     updated_rows = []
     mistral_api_url = "https://nodeapi.accuratereport.org/api/mistral/"
     headers = {"Content-Type": "application/json"}
-    MAX_RETRIES = 3
+    MAX_RETRIES = 5
     for i, batch in enumerate(batches):
         print(f"🔄 Sending batch {i + 1}/{len(batches)}")
         # Custom prompt for ISO 14001 Stage 2 (EMS audit): Ensure grammar & context fit EMS
