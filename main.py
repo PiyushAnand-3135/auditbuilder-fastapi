@@ -16,7 +16,8 @@ app = FastAPI(
 )
 
 origins = [
-    "https://accuratereport.org/",
+    "https://accuratereport.org",
+    "https://www.accuratereport.org",
 ]
 
 # CORS Middleware
