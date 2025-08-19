@@ -16,7 +16,7 @@ app = FastAPI(
 )
 
 origins = [
-    "http://report-frontend-dm1bya-519963-31-97-117-80.traefik.me",
+    "https://accuratereport.org/",
 ]
 
 # CORS Middleware
