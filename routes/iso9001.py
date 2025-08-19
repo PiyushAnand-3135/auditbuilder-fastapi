@@ -4462,7 +4462,7 @@ async def add_org_brief_to_docx_iso9001_14001(
     docx_buffer,
     company_name,
     scope,
-    mistral_url="http://report-nodeapi-mzwh8q-7abe57-31-97-117-80.traefik.me/api/mistral/"
+    mistral_url="https://report-nodeapi-mzwh8q-7abe57-31-97-117-80.traefik.me/api/mistral/"
 ):
     """
     Calls Mistral for an organization brief and inserts it into the IMS (ISO 9001+14001) DOCX stage 1 cell.
@@ -8924,7 +8924,7 @@ async def submit_iso9001_stage1(audit: ISO9001Stage1Audit, forced_pattern_name=N
 
     batches = split_into_batches(extracted_rows, batch_size=5)
     updated_rows = []
-    mistral_api_url = "http://report-nodeapi-mzwh8q-7abe57-31-97-117-80.traefik.me/api/mistral/"
+    mistral_api_url = "https://report-nodeapi-mzwh8q-7abe57-31-97-117-80.traefik.me/api/mistral/"
     headers = {"Content-Type": "application/json"}
     MAX_RETRIES = 3
 
@@ -9069,7 +9069,7 @@ async def submit_iso9001_stage2(audit: ISO9001Stage2Audit, forced_pattern_name=N
     # 4. Split into batches
     batches = split_into_batches(extracted_rows, batch_size=5)
     updated_rows = []
-    mistral_api_url = "http://report-nodeapi-mzwh8q-7abe57-31-97-117-80.traefik.me/api/mistral/"
+    mistral_api_url = "https://report-nodeapi-mzwh8q-7abe57-31-97-117-80.traefik.me/api/mistral/"
     headers = {"Content-Type": "application/json"}
 
     MAX_RETRIES = 3
