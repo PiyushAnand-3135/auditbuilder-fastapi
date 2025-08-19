@@ -513,22 +513,31 @@ DO NOT mention ISO, certifications, standards, quality/environmental compliance,
 - IMS Scope: {scope}
 
 Output ONLY the brief text itself — do NOT include code block formatting, preface, or output as JSON. Output only the brief.
-    output only plain paragraph no text no json no markdown at all.
+output only plain paragraph no text no json no markdown at all.
     """
 
-    # 2. Call Mistral API
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        api_response = await client.post(
-            mistral_url,
-            json={"prompt": materials_prompt},
-            headers={"Content-Type": "application/json"}
-        )
-        api_response.raise_for_status()
-        if api_response.headers.get("content-type", "").startswith("application/json"):
-            result = api_response.json()
-            brief_string = result.get("response", "") or str(result)
-        else:
-            brief_string = api_response.text
+    # 2. Call Mistral API with retry logic (max 3 attempts)
+    MAX_RETRIES = 3
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                api_response = await client.post(
+                    mistral_url,
+                    json={"prompt": materials_prompt},
+                    headers={"Content-Type": "application/json"}
+                )
+                api_response.raise_for_status()
+                if api_response.headers.get("content-type", "").startswith("application/json"):
+                    result = api_response.json()
+                    brief_string = result.get("response", "") or str(result)
+                else:
+                    brief_string = api_response.text
+            break  # Success, exit retry loop
+        except Exception as e:
+            if attempt == MAX_RETRIES:
+                raise  # Propagate error after final attempt
+            await asyncio.sleep(2)  # Short delay before retry, can be adjusted
+
     brief_string = brief_string.strip()
 
     # 3. Robust extraction from all weird result formats
@@ -596,22 +605,34 @@ DO NOT mention ISO, certifications, standards, quality/environmental compliance,
 - IMS Scope: {scope}
 
 Output ONLY the brief text itself — do NOT include code block formatting, preface, or output as JSON. Output only the brief.
-    output only plain paragraph no text no json no markdown at all.
+output only plain paragraph no text no json no markdown at all.
     """
 
-    # 2. Call Mistral API
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        api_response = await client.post(
-            mistral_url,
-            json={"prompt": equipment_prompt},
-            headers={"Content-Type": "application/json"}
-        )
-        api_response.raise_for_status()
-        if api_response.headers.get("content-type", "").startswith("application/json"):
-            result = api_response.json()
-            brief_string = result.get("response", "") or str(result)
-        else:
-            brief_string = api_response.text
+    # 2. Call Mistral API with retry logic
+    MAX_RETRIES = 3
+    RETRY_DELAY = 2  # seconds
+
+    api_response = None
+    for attempt in range(1, MAX_RETRIES + 1):
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                api_response = await client.post(
+                    mistral_url,
+                    json={"prompt": equipment_prompt},
+                    headers={"Content-Type": "application/json"}
+                )
+                api_response.raise_for_status()
+            break  # success
+        except Exception as e:
+            if attempt == MAX_RETRIES:
+                raise  # re-raise last error
+            await asyncio.sleep(RETRY_DELAY)
+
+    if api_response.headers.get("content-type", "").startswith("application/json"):
+        result = api_response.json()
+        brief_string = result.get("response", "") or str(result)
+    else:
+        brief_string = api_response.text
     brief_string = brief_string.strip()
 
     # 3. Robust extraction from all weird result formats
@@ -675,44 +696,48 @@ async def add_infrastructure_about_to_docx_iso9001_14001(
         floors = [f"{random.randint(1,5)} floors", f"single-story", f"{random.randint(2,6)} floors plus basement", "multiple levels"]
         machinery = ["automated production lines", "CNC machines", "packaging equipment", "specialized chemical reactors", "assembly stations", "testing/lab equipment"]
         extra_activities = ["storage and dispatch", "quality assurance lab", "administrative offices", "training rooms", "maintenance workshops"]
-
         brief_string = (
             f"The unit is housed in {random.choice(buildings)} with {random.choice(floors)}. "
             f"Manufacturing machinery includes {random.choice(machinery)}. "
             f"Other activities within the unit comprise {random.choice(extra_activities)} and general support facilities."
         )
     else:
-        # 1. Infrastructure prompt
         infrastructure_prompt = f"""
 You are writing a summary for the 'About Infrastructure (like description of the building, nos. of floors, manufacturing machinery, other activities done within the Unit)' section of an IMS (ISO 9001/14001) Stage 1 audit report.
-
 Based ONLY on the following company name and scope, write a concise, specific 2–4 sentence summary describing the organization's site infrastructure, building/floor layout, major manufacturing machinery, and other business activities performed within the unit.
-
 DO NOT mention ISO, certifications, standards, quality/environmental compliance, or audit processes in any form.
-
 - Company Name: {company_name}
 - IMS Scope: {scope}
-
 Output ONLY the brief text itself — do NOT include code block formatting, preface, or output as JSON. Output only the brief.
     output only plain paragraph no text no json no markdown at all.
         """
-
-        # 2. Call Mistral API
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            api_response = await client.post(
-                mistral_url,
-                json={"prompt": infrastructure_prompt},
-                headers={"Content-Type": "application/json"}
-            )
-            api_response.raise_for_status()
-            if api_response.headers.get("content-type", "").startswith("application/json"):
-                result = api_response.json()
-                brief_string = result.get("response", "") or str(result)
-            else:
-                brief_string = api_response.text
+        # RETRY LOGIC START
+        import httpx
+        MAX_RETRIES = 3
+        RETRY_DELAY = 2  # seconds between retries
+        last_error = None
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    api_response = await client.post(
+                        mistral_url,
+                        json={"prompt": infrastructure_prompt},
+                        headers={"Content-Type": "application/json"}
+                    )
+                    api_response.raise_for_status()
+                    if api_response.headers.get("content-type", "").startswith("application/json"):
+                        result = api_response.json()
+                        brief_string = result.get("response", "") or str(result)
+                    else:
+                        brief_string = api_response.text
+                break  # Success
+            except Exception as e:
+                last_error = e
+                if attempt == MAX_RETRIES:
+                    raise  # Reraise on final failure
+                await asyncio.sleep(RETRY_DELAY)
+        # RETRY LOGIC END
         brief_string = brief_string.strip()
-
-        # 3. Robust extraction from all weird result formats
         for key in ("infrastructure", "summary", "overview", "brief"):
             try:
                 obj = json.loads(brief_string)
@@ -721,16 +746,13 @@ Output ONLY the brief text itself — do NOT include code block formatting, pref
                     break
             except Exception:
                 pass
-        # Remove any lingering codeblock or non-text artifacts:
         if brief_string.startswith("``````"):
             brief_string = brief_string.strip("`").strip()
-        # Defensive: remove any lines about ISO or "standard"
         import re
         brief_string = "\n".join([
             line for line in brief_string.splitlines()
             if not re.search(r'(ISO ?9|ISO ?1|14001|certifi|standard|compliance)', line, re.I)
         ]).strip()
-
     # 4. Insert into DOCX
     docx_buffer.seek(0)
     doc = Document(docx_buffer)
@@ -740,7 +762,6 @@ Output ONLY the brief text itself — do NOT include code block formatting, pref
             cells = [cell.text for cell in row.cells]
             for idx, cell in enumerate(row.cells):
                 if ("About Infrastructure" in cell.text):
-                    # Insert into next cell (second column)
                     if idx + 1 < len(row.cells):
                         row.cells[idx + 1].text = brief_string
                         written = True
@@ -759,7 +780,9 @@ async def add_work_process_to_docx_iso9001_14001_mistral(
     docx_buffer,
     company_name,
     scope,
-    mistral_url="https://nodeapi.accuratereport.org/api/mistral/"
+    mistral_url="https://nodeapi.accuratereport.org/api/mistral/",
+    max_retries=3,
+    retry_delay=2.0  # seconds
 ):
     """
     Calls Mistral for a work process flow based on the company's scope and inserts it
@@ -783,21 +806,31 @@ Do not include any explanatory text, numbering, bullet points, JSON, markdown, o
 - Company Name: {company_name}
 - IMS Scope: {scope}
     """
-
-    # 2. Call Mistral API
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        api_response = await client.post(
-            mistral_url,
-            json={"prompt": work_process_prompt},
-            headers={"Content-Type": "application/json"}
-        )
-        api_response.raise_for_status()
-        if api_response.headers.get("content-type", "").startswith("application/json"):
-            result = api_response.json()
-            brief_string = result.get("response", "") or str(result)
-        else:
-            brief_string = api_response.text
-    brief_string = brief_string.strip()
+    # 2. Call Mistral API with retries
+    brief_string = None
+    last_exception = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                api_response = await client.post(
+                    mistral_url,
+                    json={"prompt": work_process_prompt},
+                    headers={"Content-Type": "application/json"}
+                )
+                api_response.raise_for_status()
+                if api_response.headers.get("content-type", "").startswith("application/json"):
+                    result = api_response.json()
+                    brief_string = result.get("response", "") or str(result)
+                else:
+                    brief_string = api_response.text
+            brief_string = brief_string.strip()
+            break  # success
+        except Exception as e:
+            last_exception = e
+            if attempt < max_retries:
+                await asyncio.sleep(retry_delay)
+            else:
+                raise e
 
     # 3. Robust extraction from all weird result formats
     for key in ("process", "work_process", "steps", "chain", "summary"):
