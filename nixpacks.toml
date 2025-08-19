@@ -1,7 +1,7 @@
 providers = ["...","python"]
 
 [phases.setup]
-nixPkgs = ["python311"]
+nixPkgs = ["python3"]
 
 [phases.install]
 cmds = [
