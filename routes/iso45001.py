@@ -9162,23 +9162,42 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
                     response = await client.post(
                         mistral_api_url, json={"prompt": prompt}, headers=headers
                     )
+
+                    # Log details if server returns error code
+                    if response.status_code >= 400:
+                        print(f"⚠️ Server returned {response.status_code}")
+                        print("Headers:", response.headers)
+                        print("Body (truncated):", response.text[:1000])
+
                     response.raise_for_status()
+
                     rephrased_text = (
                         response.json().get("response", "")
                         if response.headers.get("content-type", "").startswith("application/json")
                         else response.text
                     )
                     batch_result = ensure_list_of_dicts(rephrased_text)
+
                     # Strip markdown styling
                     for row in batch_result:
                         for key in row:
                             if isinstance(row[key], str):
                                 row[key] = remove_markdown_styling(row[key])
+
                     updated_rows.extend(batch_result)
                     print(f"✅ Batch {i + 1} succeeded on attempt {attempt}")
                     break
+
+            except httpx.HTTPStatusError as e:
+                print(f"❌ Batch {i + 1}, attempt {attempt} failed with HTTP {e.response.status_code}")
+                print("Response text (truncated):", e.response.text[:1000])
+                if attempt == MAX_RETRIES:
+                    error_msg = f"Max batch retry reached. Batch {i + 1} failed."
+                    print(f"❌ {error_msg}")
+                    return {"error": error_msg}
+
             except Exception as e:
-                print(f"⚠️ Batch {i + 1}, attempt {attempt} failed: {e}")
+                print(f"❌ Batch {i + 1}, attempt {attempt} failed with error: {e}")
                 if attempt == MAX_RETRIES:
                     error_msg = f"Max batch retry reached. Batch {i + 1} failed."
                     print(f"❌ {error_msg}")
@@ -9186,6 +9205,7 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
 
     print("✅ All batches completed. Total rows:", len(updated_rows))
     patched_buffer = patch_docx_by_row_index_stage1(extract_buffer, updated_rows)
+
     # ---- MINOR NC Extraction, Summarization, and Table Patch -------
     minor_nc_rows = extract_minor_nc_rows(updated_rows)
     if minor_nc_rows:
