@@ -4804,7 +4804,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
 
     return pattern_name, pattern_desc, clause_map, prompt_table
 
-def split_into_batches(data, batch_size=5):
+def split_into_batches(data, batch_size=2):
     return [data[i:i + batch_size] for i in range(0, len(data), batch_size)]
 
 def generate_prompt_for_stage1(batch, audit, clause_map, prompt_table_md, pattern_desc):
@@ -9410,21 +9410,21 @@ async def submit_iso14001_stage1(audit: ISO9001_14001_45001Stage1Audit, forced_p
     doc.save(extract_buffer)
     extract_buffer.seek(0)
 
-    # extract_buffer = await add_org_brief_to_docx_iso9001_14001(
-    #     extract_buffer,
-    #     company_name=audit.organizationName,
-    #     scope=audit.scope
-    # )
-    # print("✅ breif added success")
+    extract_buffer = await add_org_brief_to_docx_iso9001_14001(
+        extract_buffer,
+        company_name=audit.organizationName,
+        scope=audit.scope
+    )
+    print("✅ breif added success")
 
-    # await asyncio.sleep(1.5)
-    #
-    # extract_buffer = await add_legal_requirements_to_docx_iso9001_14001_mistral(
-    #     extract_buffer,
-    #     address=audit.address,
-    #     scope=audit.scope
-    # )
-    # print("✅ laws added success")
+    await asyncio.sleep(1.5)
+
+    extract_buffer = await add_legal_requirements_to_docx_iso9001_14001_mistral(
+        extract_buffer,
+        address=audit.address,
+        scope=audit.scope
+    )
+    print("✅ laws added success")
 
     rows = extract_ims_stage1_audit_clause_table(extract_buffer)
     rows = mark_na_clauses(rows, audit.na_clauses)
@@ -9441,7 +9441,7 @@ async def submit_iso14001_stage1(audit: ISO9001_14001_45001Stage1Audit, forced_p
     )
 
 
-    batches = split_into_batches(rows, batch_size=5)
+    batches = split_into_batches(rows, batch_size=2)
     updated_rows = []
     mistral_api_url = "https://nodeapi.accuratereport.org/api/mistral/"
     headers = {"Content-Type": "application/json"}
@@ -9709,7 +9709,7 @@ async def submit(audit: ISO9001_14001_45001Stage2Audit, forced_pattern_name=None
 
     pattern_name, pattern_desc, clause_map, prompt_table = choose_document_pattern_stage2(forced_pattern_name=forced_pattern_name, date_map=date_map)
 
-    batches = split_into_batches(extracted_rows, batch_size=5)
+    batches = split_into_batches(extracted_rows, batch_size=2)
     updated_rows = []
     mistral_api_url = "https://nodeapi.accuratereport.org/api/mistral/"
     headers = {"Content-Type": "application/json"}
