@@ -9410,21 +9410,21 @@ async def submit_iso14001_stage1(audit: ISO9001_14001_45001Stage1Audit, forced_p
     doc.save(extract_buffer)
     extract_buffer.seek(0)
 
-    extract_buffer = await add_org_brief_to_docx_iso9001_14001(
-        extract_buffer,
-        company_name=audit.organizationName,
-        scope=audit.scope
-    )
-    print("✅ breif added success")
+    # extract_buffer = await add_org_brief_to_docx_iso9001_14001(
+    #     extract_buffer,
+    #     company_name=audit.organizationName,
+    #     scope=audit.scope
+    # )
+    # print("✅ breif added success")
 
-    await asyncio.sleep(1.5)
-
-    extract_buffer = await add_legal_requirements_to_docx_iso9001_14001_mistral(
-        extract_buffer,
-        address=audit.address,
-        scope=audit.scope
-    )
-    print("✅ laws added success")
+    # await asyncio.sleep(1.5)
+    #
+    # extract_buffer = await add_legal_requirements_to_docx_iso9001_14001_mistral(
+    #     extract_buffer,
+    #     address=audit.address,
+    #     scope=audit.scope
+    # )
+    # print("✅ laws added success")
 
     rows = extract_ims_stage1_audit_clause_table(extract_buffer)
     rows = mark_na_clauses(rows, audit.na_clauses)
@@ -9459,28 +9459,55 @@ async def submit_iso14001_stage1(audit: ISO9001_14001_45001Stage1Audit, forced_p
                     response = await client.post(
                         mistral_api_url, json={"prompt": prompt}, headers=headers
                     )
+
+                    # Log details if server returns error code
+                    if response.status_code >= 400:
+                        print(f"⚠️ Batch {i + 1} server returned {response.status_code}")
+                        print("Headers:", response.headers)
+                        print("Body (truncated):", response.text[:2000])
+
                     response.raise_for_status()
+
                     rephrased_text = (
                         response.json().get("response", "")
                         if response.headers.get("content-type", "").startswith("application/json")
                         else response.text
                     )
                     batch_result = ensure_list_of_dicts(rephrased_text)
+
                     # Strip markdown styling
                     for row in batch_result:
                         for key in row:
                             if isinstance(row[key], str):
                                 row[key] = remove_markdown_styling(row[key])
+
                     updated_rows.extend(batch_result)
                     print(f"✅ Batch {i + 1} succeeded on attempt {attempt}")
+
                     # <-- Throttle here to reduce burst calls -->
                     await asyncio.sleep(1.5)  # e.g., 1.5-second pause between batches
 
                     break
-            except Exception as e:
-                print(f"⚠️ Batch {i + 1}, attempt {attempt} failed: {e}")
+
+            except httpx.HTTPStatusError as e:
+                print(f"❌ Batch {i + 1}, attempt {attempt} failed with HTTP {e.response.status_code}")
+                print("Response headers:", e.response.headers)
+                print("Response body (truncated):", e.response.text[:2000])
                 if attempt < MAX_RETRIES:
-                    await asyncio.sleep(2.0)
+                    backoff = 2 ** attempt  # 2s, 4s, 8s...
+                    print(f"⏳ Waiting {backoff}s before retry...")
+                    await asyncio.sleep(backoff)
+                else:
+                    error_msg = f"Max batch retry reached. Batch {i + 1} failed."
+                    print(f"❌ {error_msg}")
+                    return {"error": error_msg}
+
+            except Exception as e:
+                print(f"❌ Batch {i + 1}, attempt {attempt} failed with error: {e}")
+                if attempt < MAX_RETRIES:
+                    backoff = 2 ** attempt
+                    print(f"⏳ Waiting {backoff}s before retry...")
+                    await asyncio.sleep(backoff)
                 else:
                     error_msg = f"Max batch retry reached. Batch {i + 1} failed."
                     print(f"❌ {error_msg}")
