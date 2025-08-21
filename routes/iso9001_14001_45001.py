@@ -9410,21 +9410,21 @@ async def submit_iso14001_stage1(audit: ISO9001_14001_45001Stage1Audit, forced_p
     doc.save(extract_buffer)
     extract_buffer.seek(0)
 
-    extract_buffer = await add_org_brief_to_docx_iso9001_14001(
-        extract_buffer,
-        company_name=audit.organizationName,
-        scope=audit.scope
-    )
-    print("✅ breif added success")
-
-    await asyncio.sleep(1.5)
-
-    extract_buffer = await add_legal_requirements_to_docx_iso9001_14001_mistral(
-        extract_buffer,
-        address=audit.address,
-        scope=audit.scope
-    )
-    print("✅ laws added success")
+    # extract_buffer = await add_org_brief_to_docx_iso9001_14001(
+    #     extract_buffer,
+    #     company_name=audit.organizationName,
+    #     scope=audit.scope
+    # )
+    # print("✅ breif added success")
+    #
+    # await asyncio.sleep(1.5)
+    #
+    # extract_buffer = await add_legal_requirements_to_docx_iso9001_14001_mistral(
+    #     extract_buffer,
+    #     address=audit.address,
+    #     scope=audit.scope
+    # )
+    # print("✅ laws added success")
 
     rows = extract_ims_stage1_audit_clause_table(extract_buffer)
     rows = mark_na_clauses(rows, audit.na_clauses)
