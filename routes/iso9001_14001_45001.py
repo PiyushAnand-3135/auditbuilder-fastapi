@@ -9485,7 +9485,7 @@ async def submit_iso14001_stage1(audit: ISO9001_14001_45001Stage1Audit, forced_p
                     print(f"✅ Batch {i + 1} succeeded on attempt {attempt}")
 
                     # <-- Throttle here to reduce burst calls -->
-                    await asyncio.sleep(1.5)  # e.g., 1.5-second pause between batches
+                    await asyncio.sleep(3)  # e.g., 1.5-second pause between batches
 
                     break
 
