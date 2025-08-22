@@ -4833,12 +4833,6 @@ When mentioning any document as evidence, you **MUST** always use its name and n
 {prompt_table_md}
 
 ---
-
-Here are detailed prompts for each clause to guide your evidence generation:
-{stage1_prompt_text}
-
----
-
 ### Audit Details:
 - Organization: {audit.organizationName}
 - IMS Scope: {audit.scope}
@@ -4848,7 +4842,6 @@ Here are detailed prompts for each clause to guide your evidence generation:
 ### Attendance Sheet:
 List of personnel in attendance. Use these names accurately while writing evidence, assigning realistic roles relevant to IMS (e.g., CEO, IMS Manager, QMS/EMS/OHS/Compliance Officer, etc.):
 {attendance_list_text}
-
 ---
 ### ABSOLUTE FORMATTING RULES (PLAIN TEXT ONLY – STRICT):
 - The output must be in strict plain text — no markdown, no bold (**), italics (*), underscores (_), bullet symbols from markdown (- or * as formatting), tables, headings, or any other non-standard formatting.
@@ -4868,7 +4861,6 @@ List of personnel in attendance. Use these names accurately while writing eviden
 - Use document dates as specified in the prompt table. Dont generate dates randomly.
 - In short: **Never make up or combine document titles, forms, or numbers. Reference every document listed in the input for the clause, and nothing else.**
 
-
 ### Instructions for Report Writing:
 - For each clause, the answer must be concise and limited to approximately 80 to 100 words, including only the necessary information relevant to the clause and documents.
 - You are to ONLY update the 'Document Verification detail with statement of Conformity' field of each item in the input list.
@@ -4884,14 +4876,12 @@ List of personnel in attendance. Use these names accurately while writing eviden
 - If 'C/NC/O' or 'Document Verification...' is 'NA', do not fill in or modify the field.
 
 ---
-
 ### Input:
 Here is the list of clause findings. Again, do NOT change the structure—only generate appropriate 'Document Verification detail with statement of Conformity' content.
 
 {json.dumps(batch, indent=2, ensure_ascii=False)}
 
 ---
-
 ### Output:
 Respond ONLY with the list of dictionaries, with updated 'Document Verification detail with statement of Conformity' fields.  
 Do not add markdown, commentary, or explanations.  
@@ -9115,9 +9105,6 @@ Use the following document numbering format throughout all evidence:
 - Do NOT combine, split, or otherwise modify listed document names/numbers.
 - Use document dates as specified in the prompt table. Dont generate dates randomly.
 - **In summary:** ONLY reference documents exactly as listed. DO NOT reference documents for a clause if none are provided.
-
-Here are detailed prompts for each clause to guide your evidence generation:
-{stage2_prompt_text}
 
 ---
 
