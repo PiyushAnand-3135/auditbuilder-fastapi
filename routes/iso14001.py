@@ -269,10 +269,6 @@ When mentioning any document as evidence, use its name and number from the table
 - If you see a general description with NO specific documents, simply generate evidence without referring to any document at all.
 - In short: **Never make up or combine document titles, forms, or numbers. Reference every document listed in the input for the clause, and nothing else.**
 - For each document follow date as it is in prompt table. Dont generate randomly
-Here are detailed prompts for each clause to guide your evidence generation:
-{stage2_prompt_text}
-
----
 
 ### Audit Details:
 - Organization: {audit.organizationName}
@@ -4479,15 +4475,13 @@ Strictly follow this pattern in each clause. Dont change randomly this XXX repla
 - Even if the input contains markdown or symbols, remove them in the output — ensure the output is fully cleaned.
 - Any output that contains forbidden formatting is invalid.
 
-IMPORTANT:
-- Do not update or change any field where "C/NC/O" is "NA". Leave it exactly as is.
-- Only write evidence for rows where "C/NC/O" is "C", "NC", or "O".
-- Any rows marked "NA" must be left unchanged—leave their evidence and status untouched.
-
 Instructions for Report Writing:
 - For each clause, the answer must be concise and limited to approximately 80 to 100 words, including only the necessary information relevant to the clause and documents.
 - ONLY update the "Document Verification detail with statement of Conformity" field in each dictionary.
 - When referencing documents as evidence, always use their names and numbers exactly as provided in the table above.
+- Do not update or change any field where "C/NC/O" is "NA". Leave it exactly as is.
+- Only write evidence for rows where "C/NC/O" is "C", "NC", or "O".
+- Any rows marked "NA" must be left unchanged—leave their evidence and status untouched.
 - If "C/NC/O" is "C": Confirm compliance, citing the correct document numbers/names.
 - If "NC": Clearly describe the nonconformity and what doesn't comply, referencing the relevant document number/name.
 - If "O": Give a neutral observation, referencing the document number/name if appropriate.
@@ -9030,12 +9024,16 @@ async def submit_iso14001_stage1(audit: ISO14001Stage1Audit, forced_pattern_name
     )
     print("✅ Brief add success")
 
+    await asyncio.sleep(2)
+
     extract_buffer = await add_legal_requirements_to_docx_iso14001_mistral(
         extract_buffer,
         address=audit.address,
         scope=audit.scope
     )
     print("✅ Legal laws add success")
+
+    await asyncio.sleep(2)
 
     rows = extract_audit_table_iso14001_stage1_ordered(extract_buffer)
     rows = mark_na_clauses_stage1(rows, getattr(audit, "na_clauses", []))
@@ -9049,11 +9047,9 @@ async def submit_iso14001_stage1(audit: ISO14001Stage1Audit, forced_pattern_name
         forced_pattern_name=forced_pattern_name, date_map=date_map
     )
 
-    print(prompt_table)
-
     batches = split_into_batches(rows, batch_size=5)
     updated_rows = []
-    MAX_RETRIES = 3
+    MAX_RETRIES = 5
     mistral_api_url = "https://nodeapi.accuratereport.org/api/mistral/"
     headers = {"Content-Type": "application/json"}
 
@@ -9086,9 +9082,11 @@ async def submit_iso14001_stage1(audit: ISO14001Stage1Audit, forced_pattern_name
                                 row[key] = remove_markdown_styling(row[key])
                     updated_rows.extend(batch_result)
                     print(f"✅ Batch {i + 1} succeeded on attempt {attempt}")
+                    await asyncio.sleep(2)
                     break
             except Exception as e:
                 print(f"⚠️ Batch {i + 1}, attempt {attempt} failed: {e}")
+                await asyncio.sleep(5)
                 if attempt == MAX_RETRIES:
                     error_msg = f"Max batch retry reached. Batch {i + 1} failed."
                     print(f"❌ {error_msg}")
@@ -9096,9 +9094,9 @@ async def submit_iso14001_stage1(audit: ISO14001Stage1Audit, forced_pattern_name
 
     patched_buffer = patch_docx_by_row_index(extract_buffer, updated_rows)
 
+    await asyncio.sleep(2)
     # ---- MINOR NC Extraction, Summarization, and Table Patch -------
     minor_nc_rows = extract_minor_nc_rows(updated_rows)
-
     if minor_nc_rows:
         summary_prompt = build_minor_nc_summary_prompt(minor_nc_rows)
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -9125,6 +9123,7 @@ async def submit_iso14001_stage1(audit: ISO14001Stage1Audit, forced_pattern_name
     print("[DEBUG][Stage1] stage1_minor_nc_store after saving:", stage1_minor_nc_store)
     print("[DEBUG][Stage1] stage1_minor_nc_store length:", len(stage1_minor_nc_store))
 
+    await asyncio.sleep(3)
     # ---- OBSERVATION Extraction, Summarization, and Table Patch -------
     obs_rows = extract_observation_rows(updated_rows)
     if obs_rows:
@@ -9202,6 +9201,8 @@ async def submit_iso14001_stage2(audit: ISO14001Stage2Audit, forced_pattern_name
     )
     print("✅ Work process added successfully")
 
+    await asyncio.sleep(2)
+
     extract_buffer = await add_materials_handled_to_docx_iso9001_14001(
         extract_buffer,
         company_name=audit.organizationName,
@@ -9209,12 +9210,16 @@ async def submit_iso14001_stage2(audit: ISO14001Stage2Audit, forced_pattern_name
     )
     print("✅ Materials added success")
 
+    await asyncio.sleep(2)
+
     extract_buffer = await add_major_equipment_to_docx_iso9001_14001(
         extract_buffer,
         company_name=audit.organizationName,
         scope=audit.scope
     )
     print("✅ Major equipment added successfully")
+
+    await asyncio.sleep(2)
 
     extracted_rows = extract_iso14001_stage2_action_rows(extract_buffer)
     extracted_rows = update_cnc_placeholders_stage2(extracted_rows)
@@ -9225,7 +9230,7 @@ async def submit_iso14001_stage2(audit: ISO14001Stage2Audit, forced_pattern_name
     updated_rows = []
     mistral_api_url = "https://nodeapi.accuratereport.org/api/mistral/"
     headers = {"Content-Type": "application/json"}
-    MAX_RETRIES = 3
+    MAX_RETRIES = 5
 
     for i, batch in enumerate(batches):
         print(f"🔄 Sending batch {i + 1}/{len(batches)}")
@@ -9252,9 +9257,11 @@ async def submit_iso14001_stage2(audit: ISO14001Stage2Audit, forced_pattern_name
                                 row[key] = remove_markdown_styling(row[key])
                     updated_rows.extend(batch_result)
                     print(f"✅ Batch {i + 1} succeeded on attempt {attempt}")
+                    await asyncio.sleep(2)
                     break
             except Exception as e:
                 print(f"⚠️ Batch {i + 1}, attempt {attempt} failed: {e}")
+                await asyncio.sleep(5)
                 if attempt == MAX_RETRIES:
                     error_msg = f"Max batch retry reached. Batch {i + 1} failed."
                     print(f"❌ {error_msg}")
@@ -9274,9 +9281,11 @@ async def submit_iso14001_stage2(audit: ISO14001Stage2Audit, forced_pattern_name
                 patched_buffer, audit, mistral_api_url, headers
             )
             print(f"✅ Stage-1 NC transfer success on attempt {attempt}")
+            await asyncio.sleep(2)
             break
         except Exception as e:
             print(f"⚠️ Stage-1 NC transfer failed on attempt {attempt}: {e}")
+            await asyncio.sleep(2)
             if attempt == MAX_TRANSFER_RETRIES:
                 print("❌ Giving up NC transfer after max retries.")
 
@@ -9287,9 +9296,11 @@ async def submit_iso14001_stage2(audit: ISO14001Stage2Audit, forced_pattern_name
                 patched_buffer, audit, mistral_api_url, headers
             )
             print(f"✅ Stage-1 Observations transfer success on attempt {attempt}")
+            await asyncio.sleep(2)
             break
         except Exception as e:
             print(f"⚠️ Stage-1 Observations transfer failed on attempt {attempt}: {e}")
+            await asyncio.sleep(2)
             if attempt == MAX_TRANSFER_RETRIES:
                 print("❌ Giving up Observations transfer after max retries.")
 
@@ -9310,7 +9321,7 @@ async def submit_iso14001_stage2(audit: ISO14001Stage2Audit, forced_pattern_name
         patched_buffer = patch_minor_ncs_table(patched_buffer, minor_nc_summaries)
 
     # ---------------------------------------------------------------
-
+    await asyncio.sleep(3)
     # ---- OBSERVATION Extraction, Summarization, and Table Patch -------
     obs_rows = extract_observation_rows(updated_rows)
     if obs_rows:
