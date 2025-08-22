@@ -4218,12 +4218,6 @@ When mentioning any document as evidence, you MUST always use its name and numbe
 - This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.
 - Dont mention again and again that the following document is according to ISO:45001 clause requirement.
 - Add dates for each document from the prompt table.
-{prompt_table_md}
-
----
-
-Here are detailed prompts for each clause to guide your evidence generation:
-{stage1_prompt_text}
 
 ---
 
@@ -4260,7 +4254,6 @@ STRICT and REDUNDANT RULES (do NOT break them):
 - Insert a blank line between each clause's answer for clarity (two newlines between answers).
 - Responses should align with best practices for ISO 45001 Stage 1 OHSMS audits, referencing roles and documents naturally.
 - If 'C/NC/O' or 'Document Verification...' is 'NA', do not fill in or modify the field.
-
 
 
 ### ABSOLUTE FORMATTING RULES (PLAIN TEXT ONLY – STRICT):
