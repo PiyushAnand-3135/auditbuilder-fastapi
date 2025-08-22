@@ -209,7 +209,7 @@ async def add_legal_requirements_to_docx_iso9001_14001_mistral(
     docx_buffer,
     address,
     scope,
-    mistral_url="https://nodeapi.accuratereport.org/api/mistral/"
+    mistral_url="https://openapi.accuratereport.org/api/openai/"
 ):
     """
     Calls Mistral LLM for Legal, Statutory & Regulatory Requirements relevant to IMS (ISO 9001 & 14001),
@@ -8554,7 +8554,7 @@ async def add_major_equipment_to_docx_iso9001_14001(
     docx_buffer,
     company_name,
     scope,
-    mistral_url="https://nodeapi.accuratereport.org/api/mistral/"
+    mistral_url="https://openapi.accuratereport.org/api/openai/"
 ):
     """
     Calls Mistral for a summary of major equipment used, and inserts it into the IMS (ISO 9001+14001) DOCX in the correct cell.
@@ -8636,7 +8636,7 @@ async def add_infrastructure_about_to_docx_iso9001_14001(
     docx_buffer,
     company_name,
     scope,
-    mistral_url="https://nodeapi.accuratereport.org/api/mistral/",
+    mistral_url="https://openapi.accuratereport.org/api/openai/",
     use_random=False  # New kwarg to control random data generation
 ):
     """
@@ -9146,7 +9146,7 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
 
     batches = split_into_batches(extracted_rows, batch_size=5)
     updated_rows = []
-    mistral_api_url = "https://nodeapi.accuratereport.org/api/mistral/"
+    mistral_api_url = "https://openapi.accuratereport.org/api/openai/"
     headers = {"Content-Type": "application/json"}
     MAX_RETRIES = 3
 
@@ -9328,7 +9328,7 @@ async def submit_iso45001_stage2(audit : ISO45001Stage2Audit, forced_pattern_nam
 
     batches = split_into_batches(extracted_rows, batch_size=5)
     updated_rows = []
-    mistral_api_url = "https://nodeapi.accuratereport.org/api/mistral/"
+    mistral_api_url = "https://openapi.accuratereport.org/api/openai/"
     headers = {"Content-Type": "application/json"}
     MAX_RETRIES = 3
     for i, batch in enumerate(batches):
