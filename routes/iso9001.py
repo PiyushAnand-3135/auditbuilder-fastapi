@@ -382,12 +382,6 @@ def generate_prompt_for_stage2(batch, audit, clause_map, prompt_table_md, patter
     {prompt_table_md}
 
     --- 
-
-    Here are detailed prompts for each clause to guide your evidence generation:
-    {stage2_prompt_text}
-
-    --- 
-
     ### Audit Details:
     - Organization: {audit.organizationName}
     - Scope: {audit.scope}
@@ -8458,11 +8452,6 @@ When mentioning any document as evidence, use its name and number from the table
 
 ---
 
-Here are detailed prompts for each clause to guide your evidence generation:
-{stage1_prompt_text}
-
----
-
 ### Audit Details:
 - Organization: {audit.organizationName}
 - QMS Scope: {audit.scope}
@@ -8911,6 +8900,8 @@ async def submit_iso9001_stage1(audit: ISO9001Stage1Audit, forced_pattern_name=N
     )
     print("✅ Brief added success")
 
+    await asyncio.sleep(2)
+
     extracted_rows = extract_stage1_audit_clause_table(extract_buffer)
     extracted_rows = update_cnc_placeholders_stage1(extracted_rows)
 
@@ -8926,7 +8917,7 @@ async def submit_iso9001_stage1(audit: ISO9001Stage1Audit, forced_pattern_name=N
     updated_rows = []
     mistral_api_url = "https://nodeapi.accuratereport.org/api/mistral/"
     headers = {"Content-Type": "application/json"}
-    MAX_RETRIES = 3
+    MAX_RETRIES = 5
 
     # Step 4: Send batches to LLM for evidence rephrasing
     for i, batch in enumerate(batches):
@@ -8954,9 +8945,11 @@ async def submit_iso9001_stage1(audit: ISO9001Stage1Audit, forced_pattern_name=N
                                 row[key] = remove_markdown_styling(row[key])
                     updated_rows.extend(batch_result)
                     print(f"✅ Batch {i + 1} succeeded on attempt {attempt}")
+                    await asyncio.sleep(2)
                     break
             except Exception as e:
                 print(f"⚠️ Batch {i + 1}, attempt {attempt} failed: {e}")
+                await asyncio.sleep(3)
                 if attempt == MAX_RETRIES:
                     error_msg = f"Max batch retry reached. Batch {i + 1} failed."
                     print(f"❌ {error_msg}")
@@ -8965,6 +8958,7 @@ async def submit_iso9001_stage1(audit: ISO9001Stage1Audit, forced_pattern_name=N
     print("✅ All batches completed. Total rows:", len(updated_rows))
     patched_buffer = patch_docx_by_row_index_stage1(extract_buffer, updated_rows)
 
+    await asyncio.sleep(2)
     # ---- MINOR NC Extraction, Summarization, and Table Patch -------
     minor_nc_rows = extract_minor_nc_rows(updated_rows)
 
@@ -8992,6 +8986,8 @@ async def submit_iso9001_stage1(audit: ISO9001Stage1Audit, forced_pattern_name=N
     stage1_minor_nc_store.extend(minor_nc_for_stage2)  # Save new NCs for Stage 2
     print("[DEBUG][Stage1] stage1_minor_nc_store after saving:", stage1_minor_nc_store)
     print("[DEBUG][Stage1] stage1_minor_nc_store length:", len(stage1_minor_nc_store))
+
+    await asyncio.sleep(2)
 
     # ---- OBSERVATION Extraction, Summarization, and Table Patch -------
     obs_rows = extract_observation_rows(updated_rows)
@@ -9072,7 +9068,7 @@ async def submit_iso9001_stage2(audit: ISO9001Stage2Audit, forced_pattern_name=N
     mistral_api_url = "https://nodeapi.accuratereport.org/api/mistral/"
     headers = {"Content-Type": "application/json"}
 
-    MAX_RETRIES = 3
+    MAX_RETRIES = 5
     for i, batch in enumerate(batches):
         print(f"🔄 Sending batch {i + 1}/{len(batches)}")
         prompt = generate_prompt_for_stage2(batch, audit, clause_map, prompt_table, pattern_desc)
@@ -9097,10 +9093,12 @@ async def submit_iso9001_stage2(audit: ISO9001Stage2Audit, forced_pattern_name=N
                                 row[key] = remove_markdown_styling(row[key])
                     updated_rows.extend(batch_result)
                     print(f"✅ Batch {i + 1} succeeded on attempt {attempt}")
+                    await asyncio.sleep(2)
                     break  # success, exit retry loop
 
             except Exception as e:
                 print(f"⚠️ Batch {i + 1}, attempt {attempt} failed: {e}")
+                await asyncio.sleep(5)
                 if attempt == MAX_RETRIES:
                     print(f"❌ Batch {i + 1} failed after {MAX_RETRIES} attempts. Skipping.")
                     # Optional: you can return a 502 response or just continue
@@ -9125,7 +9123,7 @@ async def submit_iso9001_stage2(audit: ISO9001Stage2Audit, forced_pattern_name=N
 
     # ---- MINOR NC Extraction, Summarization, and Table Patch -------
     minor_nc_rows = extract_minor_nc_rows(updated_rows)
-
+    await asyncio.sleep(2)
     if minor_nc_rows:
         summary_prompt = build_minor_nc_summary_prompt(minor_nc_rows)
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -9140,7 +9138,7 @@ async def submit_iso9001_stage2(audit: ISO9001Stage2Audit, forced_pattern_name=N
         patched_buffer = patch_minor_ncs_table(patched_buffer, minor_nc_summaries)
 
     # ---------------------------------------------------------------
-
+    await asyncio.sleep(2)
     # ---- OBSERVATION Extraction, Summarization, and Table Patch -------
     obs_rows = extract_observation_rows(updated_rows)
     if obs_rows:
@@ -9180,6 +9178,7 @@ async def download_stage1_and_stage2_reports(payload: CombinedAuditRequest):
 
     # Forward that pattern to both generation calls (force them to use the same numbering)
     stage1_response = await submit_iso9001_stage1(stage1_audit, forced_pattern_name=pattern_name, date_map=date_map)
+    await asyncio.sleep(2)
     stage2_response = await submit_iso9001_stage2(stage2_audit, forced_pattern_name=pattern_name, date_map=date_map)
 
     # Both responses are FastAPI Response objects; get .body!
