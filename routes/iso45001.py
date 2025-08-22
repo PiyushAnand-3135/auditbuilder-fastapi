@@ -8382,10 +8382,6 @@ When referencing documents, use ONLY the document NAME and NUMBER as provided in
 - **In summary:** ONLY reference documents exactly as listed. DO NOT reference documents for a clause if none are provided.
 - Use the document date for each document as mentioned in the prompt table. Dont generate them randomly.
 - Format every answer strictly as paragraphs one paragraph for each distinct answer or point. If the content contains any markdown and tables rewrite them into plain paragraph form while preserving all details and meaning. No table, markdown, or code formatting are allowed in the output.
-Here are detailed prompts for each clause to guide your evidence generation:
-{stage2_prompt_text}
-
----
 
 ### Audit Details:
 - Organization: {audit.organizationName}
@@ -9190,7 +9186,7 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
 
             except httpx.HTTPStatusError as e:
                 print(f"❌ Batch {i + 1}, attempt {attempt} failed with HTTP {e.response.status_code}")
-                await asyncio.sleep(60)
+                await asyncio.sleep(5)
                 print("Response text (truncated):", e.response.text[:1000])
                 if attempt == MAX_RETRIES:
                     error_msg = f"Max batch retry reached. Batch {i + 1} failed."
