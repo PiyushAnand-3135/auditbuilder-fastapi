@@ -4188,7 +4188,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
 
     return pattern_name, pattern_desc, clause_map, prompt_table
 
-def split_into_batches(data, batch_size=4):
+def split_into_batches(data, batch_size=5):
     return [data[i:i + batch_size] for i in range(0, len(data), batch_size)]
 
 def org_initials(org_name: str) -> str:
@@ -9101,32 +9101,32 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
     doc.save(extract_buffer)
     extract_buffer.seek(0)
 
-    # extract_buffer = await add_org_brief_to_docx_iso9001_14001(
-    #     extract_buffer,
-    #     company_name=audit.organizationName,
-    #     scope=audit.scope
-    # )
-    # print("✅ Brief added success")
-    #
-    # await asyncio.sleep(60)
-    #
-    # extract_buffer = await add_legal_requirements_to_docx_iso9001_14001_mistral(
-    #     extract_buffer,
-    #     address=audit.address,
-    #     scope=audit.scope
-    # )
-    # print("✅ laws added success")
-    #
-    # await asyncio.sleep(60)
-    #
-    # extract_buffer = await add_infrastructure_about_to_docx_iso9001_14001(
-    #     extract_buffer,
-    #     company_name=audit.organizationName,
-    #     scope=audit.scope
-    # )
-    # print("✅ Infrastructure added success")
-    #
-    # await asyncio.sleep(60)
+    extract_buffer = await add_org_brief_to_docx_iso9001_14001(
+        extract_buffer,
+        company_name=audit.organizationName,
+        scope=audit.scope
+    )
+    print("✅ Brief added success")
+
+    await asyncio.sleep(2)
+
+    extract_buffer = await add_legal_requirements_to_docx_iso9001_14001_mistral(
+        extract_buffer,
+        address=audit.address,
+        scope=audit.scope
+    )
+    print("✅ laws added success")
+
+    await asyncio.sleep(2)
+
+    extract_buffer = await add_infrastructure_about_to_docx_iso9001_14001(
+        extract_buffer,
+        company_name=audit.organizationName,
+        scope=audit.scope
+    )
+    print("✅ Infrastructure added success")
+
+    await asyncio.sleep(2)
 
     extracted_rows = extract_stage1_audit_clause_table(extract_buffer)
     extracted_rows = mark_na_clauses(extracted_rows, audit.na_clauses)
@@ -9143,11 +9143,11 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
     )
 
 
-    batches = split_into_batches(extracted_rows, batch_size=4)
+    batches = split_into_batches(extracted_rows, batch_size=5)
     updated_rows = []
     mistral_api_url = "https://nodeapi.accuratereport.org/api/mistral/"
     headers = {"Content-Type": "application/json"}
-    MAX_RETRIES = 3
+    MAX_RETRIES = 5
 
     # Step 4: Send batches to LLM for evidence rephrasing
     for i, batch in enumerate(batches):
@@ -9185,7 +9185,7 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
 
                     updated_rows.extend(batch_result)
                     print(f"✅ Batch {i + 1} succeeded on attempt {attempt}")
-                    await asyncio.sleep(60)
+                    await asyncio.sleep(2)
                     break
 
             except httpx.HTTPStatusError as e:
@@ -9199,7 +9199,7 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
 
             except Exception as e:
                 print(f"❌ Batch {i + 1}, attempt {attempt} failed with error: {e}")
-                await asyncio.sleep(60)
+                await asyncio.sleep(5)
                 if attempt == MAX_RETRIES:
                     error_msg = f"Max batch retry reached. Batch {i + 1} failed."
                     print(f"❌ {error_msg}")
@@ -9234,7 +9234,7 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
     print("[DEBUG][Stage1] stage1_minor_nc_store after saving:", stage1_minor_nc_store)
     print("[DEBUG][Stage1] stage1_minor_nc_store length:", len(stage1_minor_nc_store))
 
-    await asyncio.sleep(60)
+    await asyncio.sleep(3)
 
     # ---- OBSERVATION Extraction, Summarization, and Table Patch -------
     obs_rows = extract_observation_rows(updated_rows)
@@ -9314,12 +9314,16 @@ async def submit_iso45001_stage2(audit : ISO45001Stage2Audit, forced_pattern_nam
     )
     print("✅ laws added success")
 
+    await asyncio.sleep(2)
+
     extract_buffer = await add_major_equipment_to_docx_iso9001_14001(
         extract_buffer,
         company_name=audit.organizationName,  # Use the correct attribute from your audit object
         scope=audit.scope
     )
     print("✅ Major equipment added successfully")
+
+    await asyncio.sleep(2)
 
     extracted_rows = extract_stage2_audit_clause_table(extract_buffer)
     extracted_rows = mark_na_clauses(extracted_rows, audit.na_clauses)
@@ -9330,11 +9334,11 @@ async def submit_iso45001_stage2(audit : ISO45001Stage2Audit, forced_pattern_nam
         forced_pattern_name=forced_pattern_name, date_map=date_map
     )
 
-    batches = split_into_batches(extracted_rows, batch_size=4)
+    batches = split_into_batches(extracted_rows, batch_size=5)
     updated_rows = []
     mistral_api_url = "https://nodeapi.accuratereport.org/api/mistral/"
     headers = {"Content-Type": "application/json"}
-    MAX_RETRIES = 3
+    MAX_RETRIES = 5
     for i, batch in enumerate(batches):
         print(f"🔄 Sending batch {i + 1}/{len(batches)}")
         # Custom prompt for ISO 14001 Stage 2 (EMS audit): Ensure grammar & context fit EMS
@@ -9362,9 +9366,11 @@ async def submit_iso45001_stage2(audit : ISO45001Stage2Audit, forced_pattern_nam
 
                     updated_rows.extend(batch_result)
                     print(f"✅ Batch {i + 1} succeeded on attempt {attempt}")
+                    await asyncio.sleep(2)
                     break
             except Exception as e:
                 print(f"⚠️ Batch {i + 1}, attempt {attempt} failed: {e}")
+                await asyncio.sleep(2)
                 if attempt == MAX_RETRIES:
                     error_msg = f"Max batch retry reached. Batch {i + 1} failed."
                     print(f"❌ {error_msg}")
@@ -9396,7 +9402,7 @@ async def submit_iso45001_stage2(audit : ISO45001Stage2Audit, forced_pattern_nam
         minor_nc_summaries = clean_minor_nc_summaries(summary_text)
         patched_buffer = patch_minor_ncs_table(patched_buffer, minor_nc_summaries)
     # ---------------------------------------------------------------
-
+    await asyncio.sleep(2)
     # ---- OBSERVATION Extraction, Summarization, and Table Patch -------
     obs_rows = extract_observation_rows(updated_rows)
     if obs_rows:
