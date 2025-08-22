@@ -4188,7 +4188,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
 
     return pattern_name, pattern_desc, clause_map, prompt_table
 
-def split_into_batches(data, batch_size=2):
+def split_into_batches(data, batch_size=4):
     return [data[i:i + batch_size] for i in range(0, len(data), batch_size)]
 
 def org_initials(org_name: str) -> str:
@@ -9115,7 +9115,7 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
     # )
     # print("✅ Brief added success")
     #
-    # await asyncio.sleep(30)
+    # await asyncio.sleep(60)
     #
     # extract_buffer = await add_legal_requirements_to_docx_iso9001_14001_mistral(
     #     extract_buffer,
@@ -9124,7 +9124,7 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
     # )
     # print("✅ laws added success")
     #
-    # await asyncio.sleep(30)
+    # await asyncio.sleep(60)
     #
     # extract_buffer = await add_infrastructure_about_to_docx_iso9001_14001(
     #     extract_buffer,
@@ -9133,7 +9133,7 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
     # )
     # print("✅ Infrastructure added success")
     #
-    # await asyncio.sleep(30)
+    # await asyncio.sleep(60)
 
     extracted_rows = extract_stage1_audit_clause_table(extract_buffer)
     extracted_rows = mark_na_clauses(extracted_rows, audit.na_clauses)
@@ -9150,7 +9150,7 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
     )
 
 
-    batches = split_into_batches(extracted_rows, batch_size=2)
+    batches = split_into_batches(extracted_rows, batch_size=4)
     updated_rows = []
     mistral_api_url = "https://nodeapi.accuratereport.org/api/mistral/"
     headers = {"Content-Type": "application/json"}
@@ -9192,12 +9192,12 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
 
                     updated_rows.extend(batch_result)
                     print(f"✅ Batch {i + 1} succeeded on attempt {attempt}")
-                    await asyncio.sleep(30)
+                    await asyncio.sleep(60)
                     break
 
             except httpx.HTTPStatusError as e:
                 print(f"❌ Batch {i + 1}, attempt {attempt} failed with HTTP {e.response.status_code}")
-                await asyncio.sleep(30)
+                await asyncio.sleep(60)
                 print("Response text (truncated):", e.response.text[:1000])
                 if attempt == MAX_RETRIES:
                     error_msg = f"Max batch retry reached. Batch {i + 1} failed."
@@ -9206,7 +9206,7 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
 
             except Exception as e:
                 print(f"❌ Batch {i + 1}, attempt {attempt} failed with error: {e}")
-                await asyncio.sleep(30)
+                await asyncio.sleep(60)
                 if attempt == MAX_RETRIES:
                     error_msg = f"Max batch retry reached. Batch {i + 1} failed."
                     print(f"❌ {error_msg}")
@@ -9241,7 +9241,7 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
     print("[DEBUG][Stage1] stage1_minor_nc_store after saving:", stage1_minor_nc_store)
     print("[DEBUG][Stage1] stage1_minor_nc_store length:", len(stage1_minor_nc_store))
 
-    await asyncio.sleep(30)
+    await asyncio.sleep(60)
 
     # ---- OBSERVATION Extraction, Summarization, and Table Patch -------
     obs_rows = extract_observation_rows(updated_rows)
@@ -9337,7 +9337,7 @@ async def submit_iso45001_stage2(audit : ISO45001Stage2Audit, forced_pattern_nam
         forced_pattern_name=forced_pattern_name, date_map=date_map
     )
 
-    batches = split_into_batches(extracted_rows, batch_size=2)
+    batches = split_into_batches(extracted_rows, batch_size=4)
     updated_rows = []
     mistral_api_url = "https://nodeapi.accuratereport.org/api/mistral/"
     headers = {"Content-Type": "application/json"}
