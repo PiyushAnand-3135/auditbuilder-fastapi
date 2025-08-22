@@ -9108,32 +9108,32 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
     doc.save(extract_buffer)
     extract_buffer.seek(0)
 
-    extract_buffer = await add_org_brief_to_docx_iso9001_14001(
-        extract_buffer,
-        company_name=audit.organizationName,
-        scope=audit.scope
-    )
-    print("✅ Brief added success")
-
-    await asyncio.sleep(30)
-
-    extract_buffer = await add_legal_requirements_to_docx_iso9001_14001_mistral(
-        extract_buffer,
-        address=audit.address,
-        scope=audit.scope
-    )
-    print("✅ laws added success")
-
-    await asyncio.sleep(30)
-
-    extract_buffer = await add_infrastructure_about_to_docx_iso9001_14001(
-        extract_buffer,
-        company_name=audit.organizationName,
-        scope=audit.scope
-    )
-    print("✅ Infrastructure added success")
-
-    await asyncio.sleep(30)
+    # extract_buffer = await add_org_brief_to_docx_iso9001_14001(
+    #     extract_buffer,
+    #     company_name=audit.organizationName,
+    #     scope=audit.scope
+    # )
+    # print("✅ Brief added success")
+    #
+    # await asyncio.sleep(30)
+    #
+    # extract_buffer = await add_legal_requirements_to_docx_iso9001_14001_mistral(
+    #     extract_buffer,
+    #     address=audit.address,
+    #     scope=audit.scope
+    # )
+    # print("✅ laws added success")
+    #
+    # await asyncio.sleep(30)
+    #
+    # extract_buffer = await add_infrastructure_about_to_docx_iso9001_14001(
+    #     extract_buffer,
+    #     company_name=audit.organizationName,
+    #     scope=audit.scope
+    # )
+    # print("✅ Infrastructure added success")
+    #
+    # await asyncio.sleep(30)
 
     extracted_rows = extract_stage1_audit_clause_table(extract_buffer)
     extracted_rows = mark_na_clauses(extracted_rows, audit.na_clauses)
