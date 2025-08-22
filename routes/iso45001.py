@@ -9115,7 +9115,7 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
     )
     print("✅ Brief added success")
 
-    await asyncio.sleep(5)
+    await asyncio.sleep(30)
 
     extract_buffer = await add_legal_requirements_to_docx_iso9001_14001_mistral(
         extract_buffer,
@@ -9124,7 +9124,7 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
     )
     print("✅ laws added success")
 
-    await asyncio.sleep(5)
+    await asyncio.sleep(30)
 
     extract_buffer = await add_infrastructure_about_to_docx_iso9001_14001(
         extract_buffer,
@@ -9133,7 +9133,7 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
     )
     print("✅ Infrastructure added success")
 
-    await asyncio.sleep(5)
+    await asyncio.sleep(30)
 
     extracted_rows = extract_stage1_audit_clause_table(extract_buffer)
     extracted_rows = mark_na_clauses(extracted_rows, audit.na_clauses)
@@ -9192,12 +9192,12 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
 
                     updated_rows.extend(batch_result)
                     print(f"✅ Batch {i + 1} succeeded on attempt {attempt}")
-                    await asyncio.sleep(5)
+                    await asyncio.sleep(30)
                     break
 
             except httpx.HTTPStatusError as e:
                 print(f"❌ Batch {i + 1}, attempt {attempt} failed with HTTP {e.response.status_code}")
-                await asyncio.sleep(5)
+                await asyncio.sleep(30)
                 print("Response text (truncated):", e.response.text[:1000])
                 if attempt == MAX_RETRIES:
                     error_msg = f"Max batch retry reached. Batch {i + 1} failed."
@@ -9206,7 +9206,7 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
 
             except Exception as e:
                 print(f"❌ Batch {i + 1}, attempt {attempt} failed with error: {e}")
-                await asyncio.sleep(5)
+                await asyncio.sleep(30)
                 if attempt == MAX_RETRIES:
                     error_msg = f"Max batch retry reached. Batch {i + 1} failed."
                     print(f"❌ {error_msg}")
@@ -9241,7 +9241,7 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
     print("[DEBUG][Stage1] stage1_minor_nc_store after saving:", stage1_minor_nc_store)
     print("[DEBUG][Stage1] stage1_minor_nc_store length:", len(stage1_minor_nc_store))
 
-    await asyncio.sleep(5)
+    await asyncio.sleep(30)
 
     # ---- OBSERVATION Extraction, Summarization, and Table Patch -------
     obs_rows = extract_observation_rows(updated_rows)
