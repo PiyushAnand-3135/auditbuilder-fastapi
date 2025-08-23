@@ -222,7 +222,9 @@ async def add_legal_requirements_to_docx_iso9001_14001_mistral(
     docx_buffer,
     address,
     scope,
-    mistral_url="https://nodeapi.accuratereport.org/api/mistral/"
+    mistral_url="https://nodeapi.accuratereport.org/api/mistral/",
+    max_retries=3,
+    retry_delay=2.0  # seconds
 ):
     """
     Calls Mistral LLM for Legal, Statutory & Regulatory Requirements relevant to IMS (ISO 9001 & 14001),
@@ -248,29 +250,46 @@ async def add_legal_requirements_to_docx_iso9001_14001_mistral(
     IMS Scope: {scope}
     """
 
-    # 2. Call Mistral API
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        api_response = await client.post(
-            mistral_url,
-            json={"prompt": legal_prompt},
-            headers={"Content-Type": "application/json"}
-        )
-        api_response.raise_for_status()
-        if api_response.headers.get("content-type", "").startswith("application/json"):
-            law_list = api_response.json().get("response", "") or api_response.text
-        else:
-            law_list = api_response.text
-    law_list = law_list.strip()
-    law_list = clean_llm_law_list(law_list)  # Reuse your clean-up function for formatting
+    # 2. Call Mistral API with retries + debug logging
+    law_list = None
+    last_exception = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            print(f"🔄 Attempt {attempt} to call Mistral API for legal requirements...")
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                api_response = await client.post(
+                    mistral_url,
+                    json={"prompt": legal_prompt},
+                    headers={"Content-Type": "application/json"}
+                )
+                api_response.raise_for_status()
+                if api_response.headers.get("content-type", "").startswith("application/json"):
+                    law_list = api_response.json().get("response", "") or api_response.text
+                else:
+                    law_list = api_response.text
+            law_list = law_list.strip()
+            print("✅ Successfully received response from Mistral API.")
+            break  # success
+        except Exception as e:
+            last_exception = e
+            print(f"❌ Error on attempt {attempt}: {e}")
+            if attempt < max_retries:
+                print(f"⏳ Retrying in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
+            else:
+                print("🚨 All retries failed. Raising last exception.")
+                raise e
 
-    # 3. Replace cell in docx buffer
+    # 3. Clean up output
+    law_list = clean_llm_law_list(law_list)
+
+    # 4. Replace cell in docx buffer
     docx_buffer.seek(0)
     doc = Document(docx_buffer)
     written = False
     for table in doc.tables:
         for row in table.rows:
             for idx, cell in enumerate(row.cells):
-                # Adjust keyword(s) if your IMS template uses a distinct heading
                 if "Legal, Statutory" in cell.text:
                     if idx + 1 < len(row.cells):
                         row.cells[idx + 1].text = law_list
@@ -280,6 +299,8 @@ async def add_legal_requirements_to_docx_iso9001_14001_mistral(
                         written = True
     if not written:
         print("⚠️ Could not find 'Legal, Statutory & Regulatory Requirements' cell in the DOCX.")
+
+    # 5. Save buffer back
     docx_buffer.seek(0)
     docx_buffer.truncate(0)
     doc.save(docx_buffer)
@@ -8556,7 +8577,9 @@ async def add_major_equipment_to_docx_iso9001_14001(
     docx_buffer,
     company_name,
     scope,
-    mistral_url="https://nodeapi.accuratereport.org/api/mistral/"
+    mistral_url="https://nodeapi.accuratereport.org/api/mistral/",
+    max_retries=3,
+    retry_delay=2.0  # seconds
 ):
     """
     Calls Mistral for a summary of major equipment used, and inserts it into the IMS (ISO 9001+14001) DOCX in the correct cell.
@@ -8576,20 +8599,36 @@ DO NOT mention ISO, certifications, standards, quality/environmental compliance,
 Output ONLY the brief text itself — do NOT include code block formatting, preface, or output as JSON. Output only the summary.
     """
 
-    # 2. Call Mistral API
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        api_response = await client.post(
-            mistral_url,
-            json={"prompt": equipment_prompt},
-            headers={"Content-Type": "application/json"}
-        )
-        api_response.raise_for_status()
-        if api_response.headers.get("content-type", "").startswith("application/json"):
-            result = api_response.json()
-            brief_string = result.get("response", "") or str(result)
-        else:
-            brief_string = api_response.text
-    brief_string = brief_string.strip()
+    # 2. Call Mistral API with retries
+    brief_string = None
+    last_exception = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            print(f"🔄 Attempt {attempt} to call Mistral API for major equipment...")
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                api_response = await client.post(
+                    mistral_url,
+                    json={"prompt": equipment_prompt},
+                    headers={"Content-Type": "application/json"}
+                )
+                api_response.raise_for_status()
+                if api_response.headers.get("content-type", "").startswith("application/json"):
+                    result = api_response.json()
+                    brief_string = result.get("response", "") or str(result)
+                else:
+                    brief_string = api_response.text
+            brief_string = brief_string.strip()
+            print("✅ Successfully received response from Mistral API.")
+            break
+        except Exception as e:
+            last_exception = e
+            print(f"❌ Error on attempt {attempt}: {e}")
+            if attempt < max_retries:
+                print(f"⏳ Retrying in {retry_delay} seconds...")
+                await asyncio.sleep(retry_delay)
+            else:
+                print("🚨 All retries failed. Raising last exception.")
+                raise e
 
     # 3. Robust extraction from all weird result formats
     for key in ("equipment", "summary", "overview"):
@@ -8628,6 +8667,8 @@ Output ONLY the brief text itself — do NOT include code block formatting, pref
                         written = True
     if not written:
         print("⚠️ Could not find 'Major Equipment used' cell in the DOCX.")
+
+    # 5. Save buffer back
     docx_buffer.seek(0)
     docx_buffer.truncate(0)
     doc.save(docx_buffer)
@@ -8639,7 +8680,9 @@ async def add_infrastructure_about_to_docx_iso9001_14001(
     company_name,
     scope,
     mistral_url="https://nodeapi.accuratereport.org/api/mistral/",
-    use_random=False  # New kwarg to control random data generation
+    use_random=False,  # New kwarg to control random data generation
+    max_retries=3,
+    retry_delay=2.0  # seconds
 ):
     """
     Calls Mistral for an infrastructure summary, and inserts it into the IMS (ISO 9001+14001) DOCX in the correct cell.
@@ -8647,7 +8690,7 @@ async def add_infrastructure_about_to_docx_iso9001_14001(
     No mention of ISO/certifications/standards/compliance, no JSON/code blocks.
     """
     if use_random:
-        # Generate random infrastructure summary -- you can customize these samples!
+        # Generate random infrastructure summary
         buildings = ["a modern industrial building", "a multipurpose factory complex", "a two-story office and plant", "a facility with integrated admin and warehouse"]
         floors = [f"{random.randint(1,5)} floors", f"single-story", f"{random.randint(2,6)} floors plus basement", "multiple levels"]
         machinery = ["automated production lines", "CNC machines", "packaging equipment", "specialized chemical reactors", "assembly stations", "testing/lab equipment"]
@@ -8674,20 +8717,36 @@ Output ONLY the brief text itself — do NOT include code block formatting, mark
 output only plain paragraph no text no json no markdown.
         """
 
-        # 2. Call Mistral API
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            api_response = await client.post(
-                mistral_url,
-                json={"prompt": infrastructure_prompt},
-                headers={"Content-Type": "application/json"}
-            )
-            api_response.raise_for_status()
-            if api_response.headers.get("content-type", "").startswith("application/json"):
-                result = api_response.json()
-                brief_string = result.get("response", "") or str(result)
-            else:
-                brief_string = api_response.text
-        brief_string = brief_string.strip()
+        # 2. Call Mistral API with retries
+        brief_string = None
+        last_exception = None
+        for attempt in range(1, max_retries + 1):
+            try:
+                print(f"🔄 Attempt {attempt} to call Mistral API for infrastructure...")
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    api_response = await client.post(
+                        mistral_url,
+                        json={"prompt": infrastructure_prompt},
+                        headers={"Content-Type": "application/json"}
+                    )
+                    api_response.raise_for_status()
+                    if api_response.headers.get("content-type", "").startswith("application/json"):
+                        result = api_response.json()
+                        brief_string = result.get("response", "") or str(result)
+                    else:
+                        brief_string = api_response.text
+                brief_string = brief_string.strip()
+                print("✅ Successfully received response from Mistral API.")
+                break
+            except Exception as e:
+                last_exception = e
+                print(f"❌ Error on attempt {attempt}: {e}")
+                if attempt < max_retries:
+                    print(f"⏳ Retrying in {retry_delay} seconds...")
+                    await asyncio.sleep(retry_delay)
+                else:
+                    print("🚨 All retries failed. Raising last exception.")
+                    raise e
 
         # 3. Robust extraction from all weird result formats
         for key in ("infrastructure", "summary", "overview", "brief"):
@@ -8726,6 +8785,8 @@ output only plain paragraph no text no json no markdown.
                         written = True
     if not written:
         print("⚠️ Could not find 'About Infrastructure' cell in the DOCX.")
+
+    # 5. Save buffer back
     docx_buffer.seek(0)
     docx_buffer.truncate(0)
     doc.save(docx_buffer)
@@ -9526,6 +9587,7 @@ async def download_stage1_and_stage2_reports(payload: CombinedAuditRequest):
 
     # Forward that pattern to both generation calls (force them to use the same numbering)
     stage1_response = await submit_iso45001_stage1(stage1_audit, forced_pattern_name=pattern_name, date_map=date_map)
+    await asyncio.sleep(1.5)
     stage2_response = await submit_iso45001_stage2(stage2_audit, forced_pattern_name=pattern_name, date_map=date_map)
 
     # Both responses are FastAPI Response objects; get .body!
