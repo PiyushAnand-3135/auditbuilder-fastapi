@@ -5112,25 +5112,6 @@ def _ensure_summary_string(summary_val):
     else:
         return str(summary_val).strip()
 
-async def suggest_corrective_actions(minor_nc_entries, company_scope, mistral_api_url, headers):
-    prompt = f"""
-Generate a specific, practical corrective action for each of the following ISO 9001/14001/45001 minor nonconformities, considering the company's scope: "{company_scope}".
-Return actions as a bullet list, each matching the order below.
-
-INPUT:
-{json.dumps([x['summary'] for x in minor_nc_entries], indent=2)}
-
-OUTPUT:
-- <corrective action for NC 1>
-- <corrective action for NC 2>
-...
-"""
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        resp = await client.post(mistral_api_url, json={"prompt": prompt}, headers=headers)
-        resp.raise_for_status()
-        text = resp.json().get("response", "") if resp.headers.get("content-type", "").startswith("application/json") else resp.text
-    actions = [line.lstrip("-• \t").strip() for line in text.splitlines() if line.strip() and line.strip().startswith(("-", "•"))]
-    return actions
 
 def patch_stage1_ncs_table(docx_buffer, ncs_and_actions):
     """
@@ -9229,12 +9210,15 @@ def patch_docx_by_row_index_stage2(docx_buffer, audit_rows, table_idx=None, data
         return docx_buffer, table_idx
     return docx_buffer
 
-async def generate_completed_corrective_actions(stage1_minor_nc_store, scope_text, attendance_text, mistral_api_url, headers, max_retries=3):
+async def generate_completed_corrective_actions(stage1_minor_nc_store, scope_text, attendance_text, mistral_api_url, headers):
     """
     Given Stage 1 NCs, scope, and attendance, ask LLM for a past-tense corrective action for each NC.
     Returns a list of strings aligned with the store order.
     """
     actions = []
+    max_retries = 3
+    base_delay = 2
+
     for nc in stage1_minor_nc_store:
         clause_no = nc.get("Cl. No", "")
         summary = nc.get("summary", "")
@@ -9248,24 +9232,25 @@ async def generate_completed_corrective_actions(stage1_minor_nc_store, scope_tex
             "Output only a concise, plain-English paragraph of 2-4 sentences describing what was done, "
             "including any implementation and verification. "
             "Do NOT return JSON, bullet points, lists, or code fences — just the text description."
-            "The output must be in strict plain text — no markdown, no bold (**), italics (*), underscores (_), bullet symbols from markdown (- or * as formatting), tables, headings, or any other non-standard formatting."
-            "Do not generate any special characters used for styling in markdown (such as *, _, `, >, |, ~, #, [], ())."
         )
-        last_exception = None
+
         for attempt in range(1, max_retries + 1):
             try:
                 async with httpx.AsyncClient(timeout=60.0) as client:
                     resp = await client.post(mistral_api_url, json={"prompt": prompt}, headers=headers)
                     resp.raise_for_status()
-                    action = resp.json().get("response", "") if resp.headers.get("content-type", "").startswith("application/json") else resp.text
+                    if resp.headers.get("content-type", "").startswith("application/json"):
+                        action = resp.json().get("response", "")
+                    else:
+                        action = resp.text
                     actions.append(action.strip())
-                    break
-            except Exception as e:
-                last_exception = e
-                if attempt < max_retries:
-                    await asyncio.sleep(0.5 * attempt)
+                    break  # success, exit retry loop
+            except (httpx.RequestError, httpx.HTTPStatusError) as e:
+                if attempt == max_retries:
+                    actions.append(f"Failed to generate corrective action for NC (Clause {clause_no}): {e}")
                 else:
-                    actions.append(f"[ERROR] Could not generate corrective action after {max_retries} attempts: {e}")
+                    delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 1)
+                    await asyncio.sleep(delay)
     return actions
 
 def clean_corrective_action_text(raw_text: str) -> str:

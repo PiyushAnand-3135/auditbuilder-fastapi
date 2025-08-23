@@ -4392,6 +4392,9 @@ async def generate_completed_corrective_actions(stage1_minor_nc_store, scope_tex
     Returns a list of strings aligned with the store order.
     """
     actions = []
+    max_retries = 3
+    base_delay = 2
+
     for nc in stage1_minor_nc_store:
         clause_no = nc.get("Cl. No", "")
         summary = nc.get("summary", "")
@@ -4406,11 +4409,24 @@ async def generate_completed_corrective_actions(stage1_minor_nc_store, scope_tex
             "including any implementation and verification. "
             "Do NOT return JSON, bullet points, lists, or code fences — just the text description."
         )
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(mistral_api_url, json={"prompt": prompt}, headers=headers)
-            resp.raise_for_status()
-            action = resp.json().get("response", "") if resp.headers.get("content-type", "").startswith("application/json") else resp.text
-            actions.append(action.strip())
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    resp = await client.post(mistral_api_url, json={"prompt": prompt}, headers=headers)
+                    resp.raise_for_status()
+                    if resp.headers.get("content-type", "").startswith("application/json"):
+                        action = resp.json().get("response", "")
+                    else:
+                        action = resp.text
+                    actions.append(action.strip())
+                    break  # success, exit retry loop
+            except (httpx.RequestError, httpx.HTTPStatusError) as e:
+                if attempt == max_retries:
+                    actions.append(f"Failed to generate corrective action for NC (Clause {clause_no}): {e}")
+                else:
+                    delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 1)
+                    await asyncio.sleep(delay)
     return actions
 
 def clean_corrective_action_text(raw_text: str) -> str:
