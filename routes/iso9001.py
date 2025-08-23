@@ -8959,23 +8959,38 @@ async def submit_iso9001_stage1(audit: ISO9001Stage1Audit, forced_pattern_name=N
     patched_buffer = patch_docx_by_row_index_stage1(extract_buffer, updated_rows)
 
     await asyncio.sleep(2)
+
     # ---- MINOR NC Extraction, Summarization, and Table Patch -------
     minor_nc_rows = extract_minor_nc_rows(updated_rows)
-
+    minor_nc_summaries = []
+    MAX_RETRIES = 3  # Robust retry logic for LLM query
     if minor_nc_rows:
         summary_prompt = build_minor_nc_summary_prompt(minor_nc_rows)
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(mistral_api_url, json={"prompt": summary_prompt}, headers=headers)
-            resp.raise_for_status()
-            summary_text = (
-                resp.json().get("response", "")
-                if resp.headers.get("content-type", "").startswith("application/json")
-                else resp.text
-            )
-        minor_nc_summaries = clean_minor_nc_summaries(summary_text)
-        patched_buffer = patch_minor_ncs_table(patched_buffer, minor_nc_summaries)
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    resp = await client.post(mistral_api_url, json={"prompt": summary_prompt}, headers=headers)
+                    resp.raise_for_status()
+                    summary_text = (
+                        resp.json().get("response", "")
+                        if resp.headers.get("content-type", "").startswith("application/json")
+                        else resp.text
+                    )
+                minor_nc_summaries = clean_minor_nc_summaries(summary_text)
+                patched_buffer = patch_minor_ncs_table(patched_buffer, minor_nc_summaries)
+                break  # Success!
+            except Exception as e:
+                print(f"[WARN] Minor NC batch attempt {attempt} failed: {e}")
+                await asyncio.sleep(2)
+                if attempt == MAX_RETRIES:
+                    print("❌ Max retries reached for Minor NC summarization. Skipping minor NC patching.")
+                    minor_nc_summaries = []
+                    # Optionally, set patched_buffer unchanged
+                else:
+                    continue  # Retry
 
     # ---------------------------------------------------------------
+
     minor_nc_for_stage2 = []
     for summary in minor_nc_summaries:
         m = re.match(r"Clause\s*([\d\.]+)\s*:\s*(.+)", summary)
@@ -8993,23 +9008,39 @@ async def submit_iso9001_stage1(audit: ISO9001Stage1Audit, forced_pattern_name=N
     obs_rows = extract_observation_rows(updated_rows)
     if obs_rows:
         summary_prompt_obs = build_observation_summary_prompt(obs_rows)
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(mistral_api_url, json={"prompt": summary_prompt_obs}, headers=headers)
-            resp.raise_for_status()
-            summary_text_obs = resp.json().get("response", "") if resp.headers.get("content-type", "").startswith(
-                "application/json") else resp.text
-        obs_summaries = clean_observation_summaries(summary_text_obs)
-        patched_buffer = patch_observations_table(patched_buffer, obs_summaries)
-        # Save for Stage 2 transfer
-        obs_for_stage2 = []
-        for summary in obs_summaries:
-            m = re.match(r"Clause\s*([\d\.]+)\s*:\s*(.+)", summary)
-            if m:
-                obs_for_stage2.append({"Cl. No": m.group(1), "summary": m.group(2)})
-        stage1_observation_store.clear()
-        stage1_observation_store.extend(obs_for_stage2)
-        print("[DEBUG][Stage1] stage1_observation_store after saving:", stage1_observation_store)
-    # ---------------------------------------------------------------
+        summary_text_obs = None
+        MAX_RETRIES = 3
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    resp = await client.post(mistral_api_url, json={"prompt": summary_prompt_obs}, headers=headers)
+                    resp.raise_for_status()
+                    summary_text_obs = resp.json().get("response", "") if resp.headers.get("content-type",
+                                                                                           "").startswith(
+                        "application/json") else resp.text
+                print(f"✅ Observation batch succeeded on attempt {attempt}")
+                break
+            except Exception as e:
+                print(f"⚠️ Observation batch attempt {attempt} failed: {e}")
+                if attempt == MAX_RETRIES:
+                    print("❌ Max observation batch retry reached. Observation batch failed.")
+                    summary_text_obs = ""
+        if summary_text_obs:  # Only proceed if we got a response
+            obs_summaries = clean_observation_summaries(summary_text_obs)
+            patched_buffer = patch_observations_table(patched_buffer, obs_summaries)
+            # Save for Stage 2 transfer
+            obs_for_stage2 = []
+            for summary in obs_summaries:
+                m = re.match(r"(?:Clause\s*)?([\d\.]+)\s*[:\-–]?\s*(.+)", summary, re.I)
+                if m:
+                    obs_for_stage2.append({"Cl. No": m.group(1), "summary": m.group(2)})
+                else:
+                    # Keep even if parsing fails
+                    obs_for_stage2.append({"Cl. No": "", "summary": summary})
+            stage1_observation_store.clear()
+            stage1_observation_store.extend(obs_for_stage2)
+            print("[DEBUG][Stage1] stage1_observation_store after saving:", stage1_observation_store)
+    # --------------------------------------------------------------
 
     final_doc_bytes = patched_buffer.getvalue()
 
@@ -9056,8 +9087,6 @@ async def submit_iso9001_stage2(audit: ISO9001Stage2Audit, forced_pattern_name=N
     # 2. Extract rows
     extracted_rows = extract_iso9001_stage2_action_rows(extract_buffer)
     extracted_rows = update_cnc_placeholders_stage2(extracted_rows)
-
-    # print(f"Extracted {len(extracted_rows)} actionable rows")
 
     # 3. Select document pattern once
     pattern_name, pattern_desc, clause_map, prompt_table = choose_document_pattern_stage2(forced_pattern_name=forced_pattern_name, date_map=date_map)
@@ -9123,33 +9152,60 @@ async def submit_iso9001_stage2(audit: ISO9001Stage2Audit, forced_pattern_name=N
 
     # ---- MINOR NC Extraction, Summarization, and Table Patch -------
     minor_nc_rows = extract_minor_nc_rows(updated_rows)
-    await asyncio.sleep(2)
+    minor_nc_summaries = []
+    MAX_RETRIES = 3  # Robust retry logic for LLM query
     if minor_nc_rows:
         summary_prompt = build_minor_nc_summary_prompt(minor_nc_rows)
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(mistral_api_url, json={"prompt": summary_prompt}, headers=headers)
-            resp.raise_for_status()
-            summary_text = (
-                resp.json().get("response", "")
-                if resp.headers.get("content-type", "").startswith("application/json")
-                else resp.text
-            )
-        minor_nc_summaries = clean_minor_nc_summaries(summary_text)
-        patched_buffer = patch_minor_ncs_table(patched_buffer, minor_nc_summaries)
-
+        await asyncio.sleep(1.5)
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    resp = await client.post(mistral_api_url, json={"prompt": summary_prompt}, headers=headers)
+                    resp.raise_for_status()
+                    summary_text = (
+                        resp.json().get("response", "")
+                        if resp.headers.get("content-type", "").startswith("application/json")
+                        else resp.text
+                    )
+                minor_nc_summaries = clean_minor_nc_summaries(summary_text)
+                patched_buffer = patch_minor_ncs_table(patched_buffer, minor_nc_summaries)
+                break  # Success!
+            except Exception as e:
+                print(f"[WARN] Minor NC batch attempt {attempt} failed: {e}")
+                await asyncio.sleep(2)
+                if attempt == MAX_RETRIES:
+                    print("❌ Max retries reached for Minor NC summarization. Skipping minor NC patching.")
+                    minor_nc_summaries = []
+                    # Optionally, set patched_buffer unchanged
+                else:
+                    continue  # Retry
     # ---------------------------------------------------------------
+
     await asyncio.sleep(2)
+
     # ---- OBSERVATION Extraction, Summarization, and Table Patch -------
     obs_rows = extract_observation_rows(updated_rows)
     if obs_rows:
+        await asyncio.sleep(1.5)
         summary_prompt_obs = build_observation_summary_prompt(obs_rows)
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            resp = await client.post(mistral_api_url, json={"prompt": summary_prompt_obs}, headers=headers)
-            resp.raise_for_status()
-            summary_text_obs = resp.json().get("response", "") if resp.headers.get("content-type", "").startswith(
-                "application/json") else resp.text
-        obs_summaries = clean_observation_summaries(summary_text_obs)
-        patched_buffer = patch_observations_table(patched_buffer, obs_summaries)
+        MAX_RETRIES = 3
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    resp = await client.post(mistral_api_url, json={"prompt": summary_prompt_obs}, headers=headers)
+                    resp.raise_for_status()
+                    summary_text_obs = resp.json().get("response", "") if resp.headers.get("content-type",
+                                                                                           "").startswith(
+                        "application/json") else resp.text
+                obs_summaries = clean_observation_summaries(summary_text_obs)
+                patched_buffer = patch_observations_table(patched_buffer, obs_summaries)
+                print(f"✅ Observation summaries patched (attempt {attempt})")
+                break  # Exit retry loop on success
+            except Exception as e:
+                print(f"⚠️ Observation table summarization failed on attempt {attempt}: {e}")
+                await asyncio.sleep(2)
+                if attempt == MAX_RETRIES:
+                    print(f"❌ Failed to patch observation table after {MAX_RETRIES} attempts.")
 
     final_doc_bytes = patched_buffer.getvalue()
     headers = {
