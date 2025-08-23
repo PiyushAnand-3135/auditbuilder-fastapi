@@ -4472,7 +4472,9 @@ async def add_org_brief_to_docx_iso9001_14001(
     docx_buffer,
     company_name,
     scope,
-    mistral_url="https://nodeapi.accuratereport.org/api/mistral/"
+    mistral_url="https://nodeapi.accuratereport.org/api/mistral/",
+    max_retries=3,
+    backoff_factor=2,
 ):
     """
     Calls Mistral for an organization brief and inserts it into the IMS (ISO 9001+14001) DOCX stage 1 cell.
@@ -4492,19 +4494,31 @@ DO NOT mention ISO, certifications, standards, quality/environmental compliance,
 Output ONLY the brief text itself — do NOT include code block formatting, preface, or output as JSON. Output only the brief.
     """
 
-    # 2. Call Mistral API
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        api_response = await client.post(
-            mistral_url,
-            json={"prompt": brief_prompt},
-            headers={"Content-Type": "application/json"}
-        )
-        api_response.raise_for_status()
-        if api_response.headers.get("content-type", "").startswith("application/json"):
-            result = api_response.json()
-            brief_string = result.get("response", "") or str(result)
-        else:
-            brief_string = api_response.text
+    # 2. Call Mistral API with retry logic
+    brief_string = ""
+    for attempt in range(1, max_retries + 1):
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                api_response = await client.post(
+                    mistral_url,
+                    json={"prompt": brief_prompt},
+                    headers={"Content-Type": "application/json"}
+                )
+                api_response.raise_for_status()
+                if api_response.headers.get("content-type", "").startswith("application/json"):
+                    result = api_response.json()
+                    brief_string = result.get("response", "") or str(result)
+                else:
+                    brief_string = api_response.text
+            print(f"✅ Mistral API succeeded on attempt {attempt}")
+            break  # success → exit retry loop
+        except Exception as e:
+            if attempt == max_retries:
+                raise  # re-raise last exception
+            wait_time = backoff_factor ** (attempt - 1)
+            print(f"⚠️ Attempt {attempt} failed: {e}. Retrying in {wait_time}s...")
+            await asyncio.sleep(wait_time)
+
     brief_string = brief_string.strip()
 
     # 3. Robust extraction from all weird result formats

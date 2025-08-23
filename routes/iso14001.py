@@ -8305,47 +8305,75 @@ async def add_org_brief_to_docx_iso14001(
     docx_buffer,
     company_name,
     scope,
-    mistral_url="https://nodeapi.accuratereport.org/api/mistral/"
+    mistral_url="https://nodeapi.accuratereport.org/api/mistral/",
+    max_retries=3,
+    backoff_factor=2,
 ):
     """
-    Calls Mistral for a company brief and inserts into the ISO 14001 DOCX stage 1 cell.
+    Calls Mistral for an organization brief and inserts it into the IMS (ISO 9001+14001) DOCX stage 1 cell.
+    Only the actual business/activities brief will appear (no JSON, no standards mention).
     """
-    # 1. Prepare ISO 14001-specific prompt
+    # 1. Strict, ISO-agnostic prompt
     brief_prompt = f"""
-    You are an ISO 14001 environmental management (EMS) audit assistant.
+You are writing the opening organization summary for an IMS (ISO 9001/14001) Stage 1 audit report.
 
-    Based only on the following company name and ISO 14001 scope, write a concise, professional 2–3 sentence overview describing this organization's main activities and business focus, suitable for the beginning of a Stage 1 ISO 14001 audit report.
+Based ONLY on the following company name and scope, write a concise, professional 2–3 sentence overview of this organization's main activities, products/services, and business focus.
 
-    Company Name: {company_name}
-    Scope: {scope}
+DO NOT mention ISO, certifications, standards, quality/environmental compliance, or audit processes in any form.
 
-    Output ONLY the brief text itself — do NOT include code block formatting, preface, or output as JSON. Output only the brief.
-    output only plain paragraph no text no json no markdown at all.
+- Company Name: {company_name}
+- IMS Scope: {scope}
+
+Output ONLY the brief text itself — do NOT include code block formatting, preface, or output as JSON. Output only the brief.
     """
 
-    # 2. Call Mistral API
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        api_response = await client.post(
-            mistral_url,
-            json={"prompt": brief_prompt},
-            headers={"Content-Type": "application/json"}
-        )
-        api_response.raise_for_status()
-        if api_response.headers.get("content-type", "").startswith("application/json"):
-            result = api_response.json()
-            brief_string = result.get("response", "") or str(result)
-        else:
-            brief_string = api_response.text
-    brief_string = brief_string.strip()
-    # Try to extract if it's wrapped in JSON with an 'overview' field
-    try:
-        obj = json.loads(brief_string)
-        if isinstance(obj, dict) and "overview" in obj:
-            brief_string = obj["overview"]
-    except Exception:
-        pass
+    # 2. Call Mistral API with retry logic
+    brief_string = ""
+    for attempt in range(1, max_retries + 1):
+        try:
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                api_response = await client.post(
+                    mistral_url,
+                    json={"prompt": brief_prompt},
+                    headers={"Content-Type": "application/json"}
+                )
+                api_response.raise_for_status()
+                if api_response.headers.get("content-type", "").startswith("application/json"):
+                    result = api_response.json()
+                    brief_string = result.get("response", "") or str(result)
+                else:
+                    brief_string = api_response.text
+            print(f"✅ Mistral API succeeded on attempt {attempt}")
+            break  # success → exit retry loop
+        except Exception as e:
+            if attempt == max_retries:
+                raise  # re-raise last exception
+            wait_time = backoff_factor ** (attempt - 1)
+            print(f"⚠️ Attempt {attempt} failed: {e}. Retrying in {wait_time}s...")
+            await asyncio.sleep(wait_time)
 
-    # 3. Insert the brief into the DOCX
+    brief_string = brief_string.strip()
+
+    # 3. Robust extraction from all weird result formats
+    for key in ("brief", "overview"):
+        try:
+            obj = json.loads(brief_string)
+            if isinstance(obj, dict) and key in obj:
+                brief_string = obj[key]
+                break
+        except Exception:
+            pass
+    # Remove any lingering codeblock or non-text artifacts:
+    if brief_string.startswith("``````"):
+        brief_string = brief_string.strip("`").strip()
+    # Defensive: remove any lines about ISO or "standard"
+    import re
+    brief_string = "\n".join([
+        line for line in brief_string.splitlines()
+        if not re.search(r'(ISO ?9|ISO ?1|14001|certifi|standard|compliance)', line, re.I)
+    ]).strip()
+
+    # 4. Insert into DOCX
     docx_buffer.seek(0)
     doc = Document(docx_buffer)
     written = False
@@ -8353,14 +8381,12 @@ async def add_org_brief_to_docx_iso14001(
         for row in table.rows:
             cells = [cell.text for cell in row.cells]
             for idx, cell in enumerate(row.cells):
-                # Find the label cell (left column)
-                if "Brief about the organization" in cell.text:
-                    # Insert into the next cell (second column)
+                if ("Brief about the organization" in cell.text) or ("Organization Brief" in cell.text):
+                    # Insert into next cell (second column)
                     if idx + 1 < len(row.cells):
                         row.cells[idx + 1].text = brief_string
                         written = True
                     else:
-                        # Just in case it's a one-column row
                         cell.text = "Brief about the organization:\n\n" + brief_string
                         written = True
     if not written:
