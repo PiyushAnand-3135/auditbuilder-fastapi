@@ -9789,6 +9789,7 @@ async def submit(audit: ISO9001_14001_45001Stage2Audit, forced_pattern_name=None
 
     await asyncio.sleep(2)
     # ---------------------------------------------------------------
+
     # ---- OBSERVATION Extraction, Summarization, and Table Patch -------
     obs_rows = extract_observation_rows(updated_rows)
     if obs_rows:
