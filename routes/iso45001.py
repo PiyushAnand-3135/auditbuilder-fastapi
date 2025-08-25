@@ -4231,7 +4231,7 @@ def org_initials(org_name: str) -> str:
     return "".join([w[0].upper() for w in org_name.split() if w and w[0].isalpha()])
 
 def generate_prompt_for_stage1(batch, audit, clause_map, prompt_table_md, pattern_desc):
-    # Collect clause-specific prompts, if you use them (ISO 9001/14001/45001 OHSMS blend)
+    # Collect clause-specific prompts, if you use them (ISO 45001 OHSMS blend)
     stage1_prompts = []
     for clause, docs in clause_map.items():
         for doc in docs:
@@ -4241,16 +4241,23 @@ def generate_prompt_for_stage1(batch, audit, clause_map, prompt_table_md, patter
 
     attendance_list_text = "\n".join([f"- {member}" for member in audit.attendanceSheet])
 
+    # IMS_org style instructions only if pattern_desc matches IMS_org
+    ims_org_instructions = ""
+    if "Org initials + OHSMS (XXX-OHSMS-...)" in pattern_desc:
+        ims_org_instructions = """
+- If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-OHSMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report. Only do this when document pattern starts with XXX. Do not do this if it is just F-X or P-X.
+- Do not modify the document number or details randomly.
+- For example, if the organization's name is "Eco Solutions Pvt Ltd", then you must use "ESPL-OHSMS-F-01" instead of "XXX-OHSMS-F-01".
+- This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.
+"""
+
     return f"""
 You are an audit reporting assistant for an ISO 45001:2018 Stage 1 Occupational Health & Safety Management System (OH&SMS) audit.
 
 Use the following document numbering format throughout the report:  
 Pattern: {pattern_desc}  
 When mentioning any document as evidence, you MUST always use its name and number from the table below.  
-- If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-OHSMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report.Only do this when document pattern starts with XXX . Dont do this if its just F-X or P-X.
-- Dont modify the document number or details randomly.
-- For example, if the organization's name is "Eco Solutions Pvt Ltd", then you must use "ESPL-OHSMS-F-01" instead of "XXX-OHSMS-F-01".
-- This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.
+{ims_org_instructions}
 - Dont mention again and again that the following document is according to ISO:45001 clause requirement.
 - Add dates for each document from the prompt table.
 
@@ -4280,7 +4287,7 @@ STRICT and REDUNDANT RULES (do NOT break them):
 - For each clause, the answer must be concise and limited to approximately 80 to 100 words, including only the necessary information relevant to the clause and documents.
 - You are to ONLY update the 'Document Verification detail with statement of Conformity' field of each item in the input list.
 - DO NOT change or remove any keys like 'Cl. No', 'Description', or 'C/NC/O'.
-- If the "C/NC/O" value is "C", write the evidence as a professional, positive confirmation that OHSMS/ requirements for this clause are met, referencing the relevant ISO 9001/14001:2015/45001:2018 clauses and ONLY the document(s) listed for that clause. Avoid repeatedly stating generic phrases such as "the clause meets requirements" or "this clause is compliant"; show this through the presented evidence instead.
+- If the "C/NC/O" value is "C", write the evidence as a professional, positive confirmation that OHSMS requirements for this clause are met, referencing ONLY the document(s) listed for that clause. Avoid repeatedly stating generic phrases such as "the clause meets requirements" or "this clause is compliant"; show this through the presented evidence instead.
 - If "C/NC/O" is "NC", document a specific nonconformity—clearly stating what is not conforming, referencing ONLY the relevant clause and document(s) listed for that clause.
 - If "C/NC/O" is "O", rephrase neutrally as an observation, referencing ONLY the clause and relevant document(s) listed for that clause.
 - For each clause, reference strictly and exclusively the exact documents from the chosen `choose_document_pattern_*` output for that clause. Do NOT include or invent any document numbers, names, or forms not present in the mapping for that clause.
@@ -4314,6 +4321,7 @@ Respond ONLY with the list of dictionaries, with updated 'Document Verification 
 Do not add commentary or explanations.  
 Ensure each clause's answer is separated by one blank line.
 """
+
 
 
 def ensure_list_of_dicts(text: str) -> list[dict]:

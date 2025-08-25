@@ -4597,17 +4597,24 @@ def generate_prompt_for_stage1(batch, audit, clause_map, prompt_table_md, patter
 
     attendance_list_text = "\n".join([f"- {member}" for member in audit.attendanceSheet])
 
+    # Extra IMS_org instructions (only if pattern_desc matches IMS_org style)
+    ims_org_instructions = ""
+    if "Org initials + IMS (XXX-IMS-...)" in pattern_desc:
+        ims_org_instructions = f"""
+- If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-IMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report. Only do this when document pattern starts with XXX. Do not do this if it’s just F-X or P-X.
+- Do not modify the document number or details randomly.
+- For example, if the organization's name is "Eco Solutions Pvt Ltd", then you must use "ESPL-IMS-F-01" instead of "XXX-IMS-F-01".
+- The correct initials to use for this organization are: {org_initials(audit.organizationName)}.
+- This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.
+"""
+
     return f"""
 You are an audit reporting assistant for an ISO 9001:2015 and ISO 14001:2015 **Stage 1 Integrated Management System (IMS)** assessment.
 
 Use the following document numbering format throughout the report:  
 **Pattern**: {pattern_desc}  
 When mentioning any document as evidence, you **MUST** always use its name and number from the table below.  
-- If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-EMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report.Only do this when document pattern starts with XXX . Dont do this if its just F-X or P-X.
-- Dont modify the document number or details randomly.
-- This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.
-- The correct initials to use for this organization are: **{org_initials(audit.organizationName)}**.
-
+{ims_org_instructions}
 {prompt_table_md}
 
 ---
@@ -4675,6 +4682,7 @@ Respond ONLY with the list of dictionaries, with updated 'Document Verification 
 Do not add markdown, commentary, or explanations.  
 Ensure each clause's answer is separated by one line (\\n\\n) for clarity.
 """
+
 
 
 def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):

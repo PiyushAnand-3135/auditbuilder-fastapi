@@ -8468,17 +8468,25 @@ def generate_prompt_for_stage1(batch, audit, clause_map, prompt_table_md, patter
 
     attendance_list_text = "\n".join([f"- {member}" for member in audit.attendanceSheet])
 
+    # Extra IMS_org instructions (only if pattern_desc matches IMS_org style)
+    ims_org_instructions = ""
+    if "Org initials + QMS (XXX-QMS-...)" in pattern_desc:
+        ims_org_instructions = f"""
+Apply the below pattern only and only if the document number starts with XXX do the below thing
+- If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-QMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report. Only do this when document pattern starts with XXX. Do not do this if it’s just F-X or P-X.
+- Do not modify the document number or details randomly.
+- For example, if the organization's name is "Eco Solutions Pvt Ltd", then you must use "ESPL-QMS-F-01" instead of "XXX-QMS-F-01".
+- The correct initials to use for this organization are: {audit.organizationName}.
+- This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.
+"""
+
     return f"""
 You are an audit reporting assistant for an **ISO 9001:2015 Stage 1 Quality Management System (QMS)** audit.
 
 Use the following document numbering format throughout the report:  
 **Pattern**: {pattern_desc}  
 When mentioning any document as evidence, you **MUST** always use its name and number from the table below.  
-When mentioning any document as evidence, use its name and number from the table below.  
-    If a document number has a prefix like "XXX" or "BLPL", replace it with the initials of the organization's name
-    (e.g., "Inzinc Consulting LLC" → "ICL-IMS-F-01"). If initials are unclear, use the first letter of each word.
-- The correct initials to use for this organization are: **{audit.organizationName}**.
-- Dont mention again and again that the following document is according to ISO:9001 clause requirement.
+{ims_org_instructions}
 {prompt_table_md}
 
 ---
