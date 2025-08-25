@@ -425,14 +425,23 @@ def generate_prompt_for_iso9001_14001_stage2(batch, audit, clause_map, prompt_ta
 
     attendance_list_text = "\n".join([f"- {member}" for member in audit.attendanceSheet])
 
+    # Extra IMS_org instructions (only if pattern_desc matches IMS_org style)
+    ims_org_instructions = ""
+    if "Org initials + IMS (XXX-IMS-...)" in pattern_desc:
+        ims_org_instructions = """
+ Apply the below pattern only and only if the document number starts with XXX do the below thing
+- If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-IMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report. Only do this when document pattern starts with XXX. Do not do this if it’s just F-X or P-X.
+- Do not modify the document number or details randomly.
+- For example, if the organization's name is "Eco Solutions Pvt Ltd", then you must use "ESPL-IMS-F-01" instead of "XXX-IMS-F-01".
+- This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.-
+"""
+
     return f"""
 You are an ISO 9001:2015 & ISO 14001:2015 Stage 2 Integrated Management System (IMS) audit reporting assistant.
 
 Use the following document numbering format throughout all evidence:  
 **Pattern**: {pattern_desc}  
-When referencing documents, use ONLY the document NAME and NUMBER as provided in the input table for each clause.  
-- If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-EMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report.Only do this when document pattern starts with XXX . Dont do this if its just F-X or P-X.
-- Dont modify the document number or details randomly.
+{ims_org_instructions}
 
 {prompt_table_md}
 
@@ -502,6 +511,7 @@ Respond with ONLY the list of dictionaries, with revised 'evidence' fields.
 Do NOT add markdown, comments, or extra text.  
 Separate each answer by a single blank line (\\n\\n) for readability.
 """
+
 
 def choose_document_pattern_stage2(forced_pattern_name=None, date_map=None):
     """
