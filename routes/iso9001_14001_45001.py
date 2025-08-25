@@ -9424,6 +9424,8 @@ async def submit_iso14001_stage1(audit: ISO9001_14001_45001Stage1Audit, forced_p
     pattern_name, pattern_desc, clause_map, prompt_table = choose_document_pattern_stage1(
         forced_pattern_name=forced_pattern_name, date_map=date_map
     )
+    print("✅ Pattern description:")
+    print(pattern_desc)
 
 
     batches = split_into_batches(rows, batch_size=5)
@@ -9438,7 +9440,6 @@ async def submit_iso14001_stage1(audit: ISO9001_14001_45001Stage1Audit, forced_p
         prompt = generate_prompt_for_stage1(
             batch, audit, clause_map, prompt_table, pattern_desc,
         )
-        print(prompt)
         for attempt in range(1, MAX_RETRIES + 1):
             try:
                 async with httpx.AsyncClient(timeout=300.0) as client:
