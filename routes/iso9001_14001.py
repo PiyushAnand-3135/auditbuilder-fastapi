@@ -103,6 +103,7 @@ def generate_document_dates(clause_map, stage1_start_date_str):
     """
     Generate a fixed random date for each unique document in clause_map,
     between 7–10 months before the Stage 1 start date.
+    Returned in YYYY-MM-DD format.
     """
     start_date = datetime.strptime(stage1_start_date_str, "%Y-%m-%d")
     date_map = {}
@@ -115,7 +116,7 @@ def generate_document_dates(clause_map, stage1_start_date_str):
                 months_offset = random.randint(7, 10)
                 days_offset = random.randint(0, 29)
                 doc_date = start_date - timedelta(days=(months_offset * 30) + days_offset)
-                date_map[key] = doc_date.strftime("%d-%b-%Y")
+                date_map[key] = doc_date.strftime("%Y-%m-%d")
 
     return date_map
 
