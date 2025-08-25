@@ -4818,7 +4818,7 @@ def split_into_batches(data, batch_size=5):
     return [data[i:i + batch_size] for i in range(0, len(data), batch_size)]
 
 def generate_prompt_for_stage1(batch, audit, clause_map, prompt_table_md, pattern_desc):
-    # Collect clause-specific prompts, if you use them (ISO 9001/14001/45001 IMS blend)
+    # Collect clause-specific prompts
     stage1_prompts = []
     for clause, docs in clause_map.items():
         for doc in docs:
@@ -4828,18 +4828,24 @@ def generate_prompt_for_stage1(batch, audit, clause_map, prompt_table_md, patter
 
     attendance_list_text = "\n".join([f"- {member}" for member in audit.attendanceSheet])
 
+    # Extra IMS_org instructions (only if pattern_desc matches IMS_org style)
+    ims_org_instructions = ""
+    if "Org initials + IMS (XXX-IMS-...)" in pattern_desc:
+        ims_org_instructions = """
+ Apply the below pattern only and only if the document number starts with XXX do the below thing
+- If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-IMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report. Only do this when document pattern starts with XXX. Do not do this if it’s just F-X or P-X.
+- Do not modify the document number or details randomly.
+- For example, if the organization's name is "Eco Solutions Pvt Ltd", then you must use "ESPL-IMS-F-01" instead of "XXX-IMS-F-01".
+- This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.-
+"""
+
     return f"""
 You are an audit reporting assistant for an ISO 9001:2015, ISO 14001:2015 and ISO 45001:2018 **Stage 1 Integrated Management System (IMS)** assessment.
 
 Use the following document numbering format throughout the report:  
 **Pattern**: {pattern_desc}  
 When mentioning any document as evidence, you **MUST** always use its name and number from the table below.
- Apply the below pattern only and only if the document number starts witth XXX do the below thing
-- If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-IMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report.Only do this when document pattern starts with XXX . Dont do this if its just F-X or P-X.
-- Dont modify the document number or details randomly.
-- For example, if the organization's name is "Eco Solutions Pvt Ltd", then you must use "ESPL-IMS-F-01" instead of "XXX-IMS-F-01".
-- This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.-
-
+{ims_org_instructions}
 {prompt_table_md}
 
 ---
@@ -4867,10 +4873,10 @@ List of personnel in attendance. Use these names accurately while writing eviden
 - Make sure the documentation numbers and dates are maintained as provided. Don't makeup any document numbers, codes or patterns.
 - If a clause/question has NO documents given in the input, DO NOT invent, imply, or introduce ANY document forms, names, or numbers—leave out any document mention in your answer for that clause.
 - Under NO circumstances should you add, paraphrase, or generate document names/numbers beyond what is provided for that clause.
-- Do NOT attempt to complete or create document numbers based on the pattern. ONLY use the exact document number provided. If a number is not listed, do not use one.**
+- Do NOT attempt to complete or create document numbers based on the pattern. ONLY use the exact document number provided. If a number is not listed, do not use one.
 - If you see a general description with NO specific documents, simply generate evidence without referring to any document at all.
 - Use document dates as specified in the prompt table. Dont generate dates randomly.
-- In short: **Never make up or combine document titles, forms, or numbers. Reference every document listed in the input for the clause, and nothing else.**
+- In short: Never make up or combine document titles, forms, or numbers. Reference every document listed in the input for the clause, and nothing else.
 
 ### Instructions for Report Writing:
 - For each clause, the answer must be concise and limited to approximately 80 to 100 words, including only the necessary information relevant to the clause and documents.
@@ -4881,7 +4887,7 @@ List of personnel in attendance. Use these names accurately while writing eviden
 - If "C/NC/O" is "O", rephrase neutrally as an observation, referencing the clause and relevant documents.
 - Maintain the input order; do not reformat or change any field except 'Document Verification detail with statement of Conformity'.
 - Every item is a dictionary, keep it exactly as-is, only updating the 'Document Verification...' field.
-- For entries where the 'Description' field includes multiple questions, provide a detailed, structured answer addressing **each question in order**.
+- For entries where the 'Description' field includes multiple questions, provide a detailed, structured answer addressing each question in order.
 - Insert a blank line between each clause's answer for clarity (i.e. two newlines).
 - Responses should align with best practices for ISO 9001/14001/45001 Stage 1 IMS audits, referencing roles and documents naturally.
 - If 'C/NC/O' or 'Document Verification...' is 'NA', do not fill in or modify the field.
@@ -4898,6 +4904,7 @@ Respond ONLY with the list of dictionaries, with updated 'Document Verification 
 Do not add markdown, commentary, or explanations.  
 Ensure each clause's answer is separated by one line (\\n\\n) for clarity.
 """
+
 
 def ensure_list_of_dicts(text: str) -> list[dict]:
     """
@@ -9069,15 +9076,23 @@ def generate_prompt_for_iso9001_14001_45001_stage2(batch, audit, clause_map, pro
 
     attendance_list_text = "\n".join([f"- {member}" for member in audit.attendanceSheet])
 
+    # Extra IMS_org instructions (only if pattern_desc matches IMS_org style)
+    ims_org_instructions = ""
+    if "Org initials + IMS (XXX-IMS-...)" in pattern_desc:
+        ims_org_instructions = """
+ Apply the below pattern only and only if the document number starts with XXX do the below thing
+- If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-IMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report. Only do this when document pattern starts with XXX. Do not do this if it’s just F-X or P-X.
+- Do not modify the document number or details randomly.
+- For example, if the organization's name is "Eco Solutions Pvt Ltd", then you must use "ESPL-IMS-F-01" instead of "XXX-IMS-F-01".
+- This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.-
+"""
+
     return f"""
 You are an ISO 9001:2015, ISO 14001:2015 & ISO 45001:2018 Stage 2 Integrated Management System (IMS) audit reporting assistant.
 
-Use the following document numbering format throughout all evidence:
-**Pattern**: {pattern_desc}
-- If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-IMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report.Only do this when document pattern starts with XXX . Dont do this if its just F-X or P-X.
-- Dont modify the document number or details randomly.
-(e.g., "Eco Solutions Pvt Ltd" → "ESPL-IMS-F-01"). If initials are unclear, use the first letter of each word.**
-
+Use the following document numbering format throughout all evidence:  
+**Pattern**: {pattern_desc}  
+{ims_org_instructions}
 {prompt_table_md}
 
 ---
@@ -9140,10 +9155,11 @@ Here is the list of clauses and requirements. Do NOT change structure—edit onl
 ---
 
 ### Output:
-Respond with ONLY the list of dictionaries, with revised 'evidence' fields.
-Do NOT add markdown, comments, or extra text.
+Respond with ONLY the list of dictionaries, with revised 'evidence' fields.  
+Do NOT add markdown, comments, or extra text.  
 Separate each answer by a single blank line (\\n\\n) for readability.
 """
+
 
 def patch_docx_by_row_index_stage2(docx_buffer, audit_rows, table_idx=None, data_start_idx=1, return_table_idx=False):
     """
