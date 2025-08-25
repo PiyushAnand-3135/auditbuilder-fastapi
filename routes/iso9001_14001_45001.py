@@ -197,6 +197,7 @@ def generate_document_dates(clause_map, stage1_start_date_str):
     """
     Generate a fixed random date for each unique document in clause_map,
     between 7–10 months before the Stage 1 start date.
+    Returned in YYYY-MM-DD format.
     """
     start_date = datetime.strptime(stage1_start_date_str, "%Y-%m-%d")
     date_map = {}
@@ -209,7 +210,7 @@ def generate_document_dates(clause_map, stage1_start_date_str):
                 months_offset = random.randint(7, 10)
                 days_offset = random.randint(0, 29)
                 doc_date = start_date - timedelta(days=(months_offset * 30) + days_offset)
-                date_map[key] = doc_date.strftime("%d-%b-%Y")
+                date_map[key] = doc_date.strftime("%Y-%m-%d")
 
     return date_map
 
@@ -4833,11 +4834,11 @@ You are an audit reporting assistant for an ISO 9001:2015, ISO 14001:2015 and IS
 Use the following document numbering format throughout the report:  
 **Pattern**: {pattern_desc}  
 When mentioning any document as evidence, you **MUST** always use its name and number from the table below.
-  
+ Apply the below pattern only and only if the document number starts witth XXX do the below thing
 - If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-IMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report.Only do this when document pattern starts with XXX . Dont do this if its just F-X or P-X.
 - Dont modify the document number or details randomly.
 - For example, if the organization's name is "Eco Solutions Pvt Ltd", then you must use "ESPL-IMS-F-01" instead of "XXX-IMS-F-01".
-- This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.
+- This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.-
 
 {prompt_table_md}
 
@@ -4863,9 +4864,10 @@ List of personnel in attendance. Use these names accurately while writing eviden
 
 **STRICT and REDUNDANT RULES (do NOT break them):**
 - For each clause, ONLY mention as evidence the exact documents and document numbers provided in the input for that clause.
+- Make sure the documentation numbers and dates are maintained as provided. Don't makeup any document numbers, codes or patterns.
 - If a clause/question has NO documents given in the input, DO NOT invent, imply, or introduce ANY document forms, names, or numbers—leave out any document mention in your answer for that clause.
 - Under NO circumstances should you add, paraphrase, or generate document names/numbers beyond what is provided for that clause.
-- **Do NOT attempt to complete or create document numbers based on the pattern. ONLY use the exact document number provided. If a number is not listed, do not use one.**
+- Do NOT attempt to complete or create document numbers based on the pattern. ONLY use the exact document number provided. If a number is not listed, do not use one.**
 - If you see a general description with NO specific documents, simply generate evidence without referring to any document at all.
 - Use document dates as specified in the prompt table. Dont generate dates randomly.
 - In short: **Never make up or combine document titles, forms, or numbers. Reference every document listed in the input for the clause, and nothing else.**
@@ -9436,6 +9438,7 @@ async def submit_iso14001_stage1(audit: ISO9001_14001_45001Stage1Audit, forced_p
         prompt = generate_prompt_for_stage1(
             batch, audit, clause_map, prompt_table, pattern_desc,
         )
+        print(prompt)
         for attempt in range(1, MAX_RETRIES + 1):
             try:
                 async with httpx.AsyncClient(timeout=300.0) as client:
