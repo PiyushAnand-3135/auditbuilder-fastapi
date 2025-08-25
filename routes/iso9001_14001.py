@@ -2489,7 +2489,7 @@ def choose_document_pattern_stage2(forced_pattern_name=None, date_map=None):
             },
             {
                 "Document Name": "Customer Focus",
-                "Document Number": "XXX-POL-02",
+                "Document Number": "QHSE-POL-02",
                 "Guidance/Description": "Policy for customer focus, satisfaction, and requirements.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
@@ -2501,7 +2501,7 @@ def choose_document_pattern_stage2(forced_pattern_name=None, date_map=None):
         "5.2": [
             {
                 "Document Name": "Quality, Environment, Health & Safety Policy",
-                "Document Number": "XXX-POL-02",
+                "Document Number": "QHSE-POL-02",
                 "Guidance/Description": "Signed and communicated QHSE policy document.",
                 "Document Owner": "Managing Director",
                 "Approved By": "Board",
@@ -3420,7 +3420,7 @@ def choose_document_pattern_stage2(forced_pattern_name=None, date_map=None):
             },
             {
                 "Document Name": "Customer Focus",
-                "Document Number": "XXX-POL-02",
+                "Document Number": "POL-02",
                 "Guidance/Description": "Policy for customer focus, satisfaction, and requirements.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
@@ -3432,7 +3432,7 @@ def choose_document_pattern_stage2(forced_pattern_name=None, date_map=None):
         "5.2": [
             {
                 "Document Name": "Quality, Environment, Health & Safety Policy",
-                "Document Number": "XXX-POL-02",
+                "Document Number": "POL-02",
                 "Guidance/Description": "Signed and communicated QHSE policy document.",
                 "Document Owner": "Managing Director",
                 "Approved By": "Board",
