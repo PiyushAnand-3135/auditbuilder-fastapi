@@ -8393,15 +8393,23 @@ def generate_prompt_for_iso45001_stage2(batch, audit, clause_map, prompt_table_m
 
     attendance_list_text = "\n".join([f"- {member}" for member in audit.attendanceSheet])
 
+    # Extra IMS_org instructions (only if pattern_desc matches IMS_org style)
+    ims_org_instructions = ""
+    if "Org initials + OHSMS (XXX-OHSMS-...)" in pattern_desc:
+        ims_org_instructions = """
+ Apply the below pattern only and only if the document number starts with XXX do the below thing
+- If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-OHSMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report. Only do this when document pattern starts with XXX. Do not do this if it’s just F-X or P-X.
+- Do not modify the document number or details randomly.
+- For example, if the organization's name is "Eco Solutions Pvt Ltd", then you must use "ESPL-OHSMS-F-01" instead of "XXX-OHSMS-F-01".
+- This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.-
+"""
+
     return f"""
 You are an ISO 45001:2018 Occupational Health & Safety Management System (OH&SMS) Stage 2 audit reporting assistant.
 
 Use the following document numbering format throughout all evidence:
 **Pattern**: {pattern_desc}
-When referencing documents, use ONLY the document NAME and NUMBER as provided in the input table for each clause.
-- Only and only If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-OHSMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report.
-- Dont modify the document number or details randomly.
-
+{ims_org_instructions}
 
 {prompt_table_md}
 
@@ -8470,6 +8478,7 @@ Respond with ONLY the list of dictionaries, with revised 'evidence' fields.
 Do NOT add markdown, comments, or extra text.
 Separate each answer by a single blank line (\\n\\n) for readability.
 """
+
 
 def patch_docx_by_row_index_stage2(
     docx_buffer,

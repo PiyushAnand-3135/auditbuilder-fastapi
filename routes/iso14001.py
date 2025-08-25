@@ -240,15 +240,23 @@ def generate_prompt_for_stage2(batch, audit, clause_map, prompt_table_md, patter
 
     attendance_list_text = "\n".join([f"- {member}" for member in audit.attendanceSheet])
 
+    # Extra IMS_org instructions (only if pattern_desc matches IMS_org style)
+    ims_org_instructions = ""
+    if "Org initials + EMS (XXX-EMS-...)" in pattern_desc:
+        ims_org_instructions = """
+ Apply the below pattern only and only if the document number starts with XXX do the below thing
+- If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-EMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report. Only do this when document pattern starts with XXX. Do not do this if it’s just F-X or P-X.
+- Do not modify the document number or details randomly.
+- For example, if the organization's name is "Eco Solutions Pvt Ltd", then you must use "ESPL-EMS-F-01" instead of "XXX-EMS-F-01".
+- This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.-
+"""
+
     return f"""
 You are an ISO 14001:2015 Stage 2 environmental management system (EMS) audit reporting assistant.
 
 Use the following document numbering format throughout the report:  
 **Pattern**: {pattern_desc}  
-When mentioning any document as evidence, use its name and number from the table below.  
-- If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-EMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report.Only do this when document pattern starts with XXX . Dont do this if its just F-X or P-X.
-- Dont modify the document number or details randomly.
-
+{ims_org_instructions}
 {prompt_table_md}
 
 --- 
@@ -312,6 +320,7 @@ Respond ONLY with the list of dictionaries, with updated 'evidence' fields.
 Do not add markdown, commentary, or explanations.  
 Ensure each answer is separated by one line (\\n\\n) for clarity.
 """
+
 
 def choose_document_pattern_stage2(forced_pattern_name=None, date_map=None):
     """
