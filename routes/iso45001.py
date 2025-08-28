@@ -471,8 +471,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes the organization's integrated management system and its context.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Describe in detail the organization’s name, nature of business, core activities, industry sector, and the names/designations of its top management from the attendance sheet, in a formal ISO audit style."
+                "Stage 2 Prompt": (
+                    "Describe in detail about company activities, top management name"
                 )
             },
             {
@@ -481,7 +481,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Identifies strengths, weaknesses, opportunities, and threats.",
                 "Document Owner": "Process Owner",
                 "Approved By": "Top Management",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a completed SWOT analysis form and describe how results influence actions, with a concrete example of a weakness or opportunity addressed."
                 )
             },
@@ -491,7 +491,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines external and internal issues relevant to organizational purpose and QMS.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the documented issues and explain, with examples, where any of these have prompted operational or policy changes."
                 )
             },
@@ -503,8 +503,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Process for identifying interested parties and their relevant needs and expectations.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Describe and show evidence that the organization has identified all relevant interested parties and determined their needs and expectations. List at least 4-5 actual interested parties (e.g., customers, regulators, staff, suppliers, contractors) and specific expectations for each. Show how this information is integrated into your management system."
+                "Stage 2 Prompt": (
+                    "Describe and show evidence that the organization has identified all relevant interested parties and determined their needs and expectations. List at least 4-5 actual interested parties (e.g., customers, regulators, staff, suppliers, contractors) and specific expectations for each. Show how this information according to the scope and address of the company."
                 )
             },
             {
@@ -513,7 +513,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Lists internal and external interested parties with their needs.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current interested parties list, and for 4-5 entries, show evidence that their expectations are tracked and acted on, such as communications, meeting minutes, or actions taken."
                 )
             }
@@ -525,8 +525,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines the boundaries and applicability of the management system.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Provide the documented scope and give real examples showing what is included and excluded; e.g., reference specific departments, locations, or processes. and also create an evidence like ( purchase order, invoice or contract to justify the scope"
+                "Stage 2 Prompt": (
+                    "Provide the documented scope and also create a evidence(like purchase order, invoice or contract) to justify the scope."
                 )
             }
         ],
@@ -537,7 +537,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "A diagram showing process interactions and interfaces.",
                 "Document Owner": "Process Owner",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the process map/chart and explain with evidence (e.g., training records, cross-functional meetings) how these interactions are communicated and implemented."
                 )
             },
@@ -547,8 +547,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Comprehensive inventory of all active management system procedures.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
-                    "Provide the current version of the procedures list and a tracked change showing a recent update or addition according to the scope."
+                "Stage 2 Prompt": (
+                    "Provide the current version of the procedures list and a tracked change showing a recent update or addition."
                 )
             }
         ],
@@ -559,8 +559,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes top management’s leadership approach in the QMS.",
                 "Document Owner": "Managing Director",
                 "Approved By": "Board",
-                "Stage 1 Prompt": (
-                    "Give examples of leadership in action (e.g., signed policies, management review participation, communication records) showing how top management demonstrates commitment and also mention the names of person in top management using the attendance sheet that he/she is commited for conformance of the management system"
+                "Stage 2 Prompt": (
+                    "Give examples of leadership in action (e.g., signed policies, management review participation, communication records) showing how top management demonstrates commitment and also mention the name of person in top management using the attendance sheet."
                 )
             },
             {
@@ -569,8 +569,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Policy for customer focus, satisfaction, and requirements.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Provide evidence (customer feedback reviews, complaint logs, actions taken) that customer focus is implemented and monitored throught the policy."
+                "Stage 2 Prompt": (
+                    "Provide evidence (customer feedback reviews, complaint logs, actions taken) that customer focus is implemented and monitored through websites, emails, display at reception."
                 )
             },
         ],
@@ -581,7 +581,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Signed and communicated QHSE policy document.",
                 "Document Owner": "Managing Director",
                 "Approved By": "Board",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current signed QHSE policy; show evidence of how it is communicated and understood at relevant functions and levels."
                 )
             }
@@ -593,8 +593,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines functional roles, responsibilities, authorities.",
                 "Document Owner": "HR Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Provide responsibility matrix or job descriptions and show evidence they are followed (e.g. signed documents, role-based process assignments). Also mention a name to justify this using a name from attendance sheet."
+                "Stage 2 Prompt": (
+                    "Provide responsibility matrix or job descriptions and show evidence they are followed (e.g. signed documents, role-based process assignments). Also, mention a employee from the attendance sheet."
                 )
             }
         ],
@@ -605,8 +605,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Process for involving employees in decisions affecting QHSE.",
                 "Document Owner": "HR Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Present meeting minutes, suggestion system outputs, or other records showing worker involvement in QMS/EMS/OHSMS activities."
+                "Stage 2 Prompt": (
+                    "Present meeting minutes, suggestion system outputs, or other records showing worker involvement in OHSMS activities. Mention a name from the attendance sheet."
                 )
             }
         ],
@@ -617,8 +617,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Documents risk and opportunity assessment and handling.",
                 "Document Owner": "Risk Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Show risk register(s) and evidence that risks/opportunities are regularly identified, assessed, and acted on (e.g., risk reviews, controls implemented). Also, mention 4-5 risks according to the scope of the company and their mitigation plan."
+                "Stage 2 Prompt": (
+                    "Show risk register(s) and evidence that risks/opportunities are regularly identified, assessed, and acted on (e.g., risk reviews, controls implemented). Mention 4-5 risks according to the scope and their mitigation plan."
                 )
             },
             {
@@ -627,7 +627,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Record of identified risks and opportunities.",
                 "Document Owner": "Risk Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current registry and examples of actions taken on identified risks/opportunities."
                 )
             },
@@ -639,8 +639,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "How to identify and manage environmental aspects and impacts.",
                 "Document Owner": "EHS Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Provide a completed impact assessment, and show how significant impacts are managed in your daily/operational practices. Also, mention two environmental aspect according to the scope."
+                "Stage 2 Prompt": (
+                    "Provide a completed impact assessment, and show how significant impacts are managed in your daily/operational practices. Mention any 4 enviornmental aspect based on the scope, and elaborate the assessment methodology."
                 )
             },
             {
@@ -649,8 +649,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Process for hazard identification and risk evaluation.",
                 "Document Owner": "Safety Officer",
                 "Approved By": "EHS Manager",
-                "Stage 1 Prompt": (
-                    "Show a record of identified hazards and evidence of implemented controls or corrective actions. Also, write any 2 hazards based on the scope of company."
+                "Stage 2 Prompt": (
+                    "Show a record of identified hazards and evidence of implemented controls or corrective actions. Mention any 4 hazards based on the scope and elaborate the assessment methodology."
                 )
             },
             {
@@ -659,7 +659,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Filled record of aspects and impact analyses.",
                 "Document Owner": "EHS Manager",
                 "Approved By": "Top Management",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the current filled record and evidence that it's regularly reviewed and updated."
                 )
             },
@@ -669,7 +669,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Actual hazard analysis and risk treatment records.",
                 "Document Owner": "Safety Officer",
                 "Approved By": "EHS Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Present completed forms with evidence of actions taken as a result (e.g. mitigation implemented)."
                 )
             }
@@ -681,8 +681,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Process to identify, access and comply with legal/other requirements.",
                 "Document Owner": "Compliance Officer",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Show the process for legal requirement identification, and current legal register. Mention legal requirement according to the country and scope of the company."
+                "Stage 2 Prompt": (
+                    "Show the process for legal requirement identification, and current legal register. Give an example of recent new/changed requirement tracked and acted on. Also mention the legal requirement based on the country and scope of the company."
                 )
             },
             {
@@ -691,7 +691,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Register of legal/other compliance requirements.",
                 "Document Owner": "Compliance Officer",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide an up-to-date legal register and show evidence of ongoing review/updates."
                 )
             }
@@ -703,8 +703,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "How to identify and manage environmental aspects and impacts.",
                 "Document Owner": "EHS Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Provide a completed impact assessment, and show how significant impacts are managed in your daily/operational practices. Also, mention two environmental aspect according to the scope."
+                "Stage 2 Prompt": (
+                    "Provide a completed impact assessment, and show how significant impacts are managed in your daily/operational practices. Mention any 4 enviornmental aspect based on the scope, and elaborate the assessment methodology."
                 )
             },
             {
@@ -713,8 +713,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Process for hazard identification and risk evaluation.",
                 "Document Owner": "Safety Officer",
                 "Approved By": "EHS Manager",
-                "Stage 1 Prompt": (
-                    "Show a record of identified hazards and evidence of implemented controls or corrective actions. Also, write any 2 hazards based on the scope of company."
+                "Stage 2 Prompt": (
+                    "Show a record of identified hazards and evidence of implemented controls or corrective actions. Mention any 4 hazards based on the scope and elaborate the assessment methodology."
                 )
             },
             {
@@ -723,7 +723,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Filled record of aspects and impact analyses.",
                 "Document Owner": "EHS Manager",
                 "Approved By": "Top Management",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the current filled record and evidence that it's regularly reviewed and updated."
                 )
             },
@@ -733,7 +733,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Actual hazard analysis and risk treatment records.",
                 "Document Owner": "Safety Officer",
                 "Approved By": "EHS Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Present completed forms with evidence of actions taken as a result (e.g. mitigation implemented)."
                 )
             }
@@ -745,8 +745,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Records QHSE objectives, plans, performance indicators.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Provide current QHSE objectives, records of performance vs objectives, and evidence of action when objectives are not achieved. Write atleast 4 objectives according to the scope."
+                "Stage 2 Prompt": (
+                    "Write at least 4 quality, environment, health and safety objectives and write the achieved results so far."
                 )
             },
             {
@@ -755,7 +755,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Filled records of objective monitoring/action plans.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Top Management",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show filled action plans and monitoring records, and describe a real corrective action triggered following a missed target."
                 )
             }
@@ -767,7 +767,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Inventory of major assets and machinery.",
                 "Document Owner": "Asset Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current asset list and evidence it's maintained and updated regularly; provide an example of how maintenance is scheduled using the list."
                 )
             },
@@ -777,7 +777,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Schedules and records for maintenance/calibration.",
                 "Document Owner": "Maintenance Supervisor",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show this year's plan and proof that maintenance and calibration are performed as scheduled (e.g., completed checklists, certificates)."
                 )
             }
@@ -789,7 +789,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "How to manage and verify employee competency.",
                 "Document Owner": "HR Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show training and competence procedure and evidence (training records, competence evaluations) that personnel are competent for roles assigned."
                 )
             },
@@ -799,8 +799,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Matrix of staff roles, competencies, qualification status.",
                 "Document Owner": "HR Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
-                    "Show the current competence matrix and evidence that gaps are tracked and closed with actual data from the past year. Also, mention a name with the role from the attendance sheet."
+                "Stage 2 Prompt": (
+                    "Show the current competence matrix and evidence that gaps are tracked and closed with actual data from the past year.Mention the name of employee that competency verified from the attendance sheet."
                 )
             },
             {
@@ -809,8 +809,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Planned training events for the year.",
                 "Document Owner": "HR Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
-                    "Provide recent annual training plan and proof of completed sessions."
+                "Stage 2 Prompt": (
+                    "Provide recent annual training plan and proof of completed sessions.Mention 2 to 3 training topics to be delivered in year based on the scope."
                 )
             },
             {
@@ -819,7 +819,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Evaluation of training effectiveness.",
                 "Document Owner": "Training Coordinator",
                 "Approved By": "HR Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Present completed effectiveness evaluations and corrective actions taken if training outcomes were not met."
                 )
             },
@@ -829,7 +829,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Records of all training carried out in the year.",
                 "Document Owner": "HR Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show signed training attendance records and certificates for at least 4 different trainings."
                 )
             },
@@ -839,8 +839,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Evaluation records for individual competence.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "HR Manager",
-                "Stage 1 Prompt": (
-                    "Submit actual filled-in evaluation forms and show how incompetence is identified and corrected. Also, mention a name with designation and what training was provided using the names from attendance sheet."
+                "Stage 2 Prompt": (
+                    "Submit actual filled-in evaluation forms and show how incompetence is identified and corrected.Mention a name to justify this from the attendance sheet."
                 )
             }
         ],
@@ -851,7 +851,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Manual describing the organization's OHSMS.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show physical/digital copies of the manual and evidence that staff have access and reference it in work."
                 )
             }
@@ -863,7 +863,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Manual includes communication procedures.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Explain how communication requirements from the manual are followed in practice; provide communications sent using the guidance."
                 )
             },
@@ -873,8 +873,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "How the organization manages its internal/external communications.",
                 "Document Owner": "Communications Coordinator",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Show an example of actual internal and external communication regarding QMS (e.g. safety alerts, customer letters)."
+                "Stage 2 Prompt": (
+                    "Show an example of actual internal and external communication regarding QMS (e.g. safety alerts, customer letters). Also, list the topics what to communicate, when to communicate, when to communicate."
                 )
             }
         ],
@@ -885,7 +885,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Document control process explained.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a controlled document with revision history, and evidence that obsolete versions are removed from use."
                 )
             },
@@ -895,7 +895,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "List of all controlled documents.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current master list, mark controlled/uncontrolled copies, and show an example of a document recently added or revised."
                 )
             },
@@ -905,7 +905,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Documents controlled that come from outside the organization.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide examples showing external documents tracked and updated—e.g., a regulation update tracked in the system."
                 )
             },
@@ -915,7 +915,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Form for requesting changes to documents.",
                 "Document Owner": "All Staff",
                 "Approved By": "Document Control Coordinator",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide one completed change request form and show how requests are logged and tracked."
                 )
             }
@@ -928,7 +928,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Document Owner": "",
                 # Not directly specified; usually Operations Manager or Process Owner – fill as per your org chart
                 "Approved By": "",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "List all core operational procedures maintained under the OHSMS, as per your organization's scope. Show how these procedures are controlled and regularly reviewed."
                 )
             },
@@ -938,17 +938,17 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Change management documentation related to operational processes.",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show completed change management forms reflecting changes in any operational procedure or process over the last year."
                 )
             },
             {
-                "Document Name": "Records of Hazard Analysis and Risk Treatement",
+                "Document Name": "Records of Hazard Analysis and Risk Treatment",
                 "Document Number": "XXX-OHSMS-F-10",
                 "Guidance/Description": "Write a prompt about the hazard analysis and risk treatment identified for each operational procedure.",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide filled records of hazard analysis and risk treatment performed for major operational activities. Give an example illustrating how results from these records led to implemented controls."
                 )
             }
@@ -960,8 +960,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Write a prompt to list of core operation procedures as per the scope.",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
-                    "Show the master list of operational procedures with reference to the scope of the company. Provide a sample showing the trace from customer requirements to documented procedures."
+                "Stage 2 Prompt": (
+                    "Show the master list of operational procedures with reference to customer requirements. Provide a sample showing the trace from customer requirements to documented procedures."
                 )
             },
             {
@@ -970,7 +970,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Write a prompt that emergency evacuation plan verified and found evident.",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show your current emergency preparedness procedure. Provide evidence (e.g., evacuation drill records) that the plan is tested and known by staff."
                 )
             }
@@ -982,8 +982,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Write a prompt that design & development prompt verified (create a sample of any product or service delivered to any client as per the scope).",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
-                    "Show a sample of design & development documentation for a product or service as per your organization’s scope. Include input/output records and version control."
+                "Stage 2 Prompt": (
+                    "Show a sample of design & development documentation for a product or service as per your organization’s scope. Create a sample of any product or service delivered to any client as per the scope and address of the company."
                 )
             },
             {
@@ -992,8 +992,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Write a prompt that design review and approval verified (create a sample of any product or service delivered to any client as per the scope).",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
-                    "Provide a completed design review and approval sheet for a recent project, showing signatures/approvals and identified issues. Also, mention a sample of product or service delivered to client as per the scope."
+                "Stage 2 Prompt": (
+                    "Show a sample of design & development documentation for a product or service as per your organization’s scope."
                 )
             },
             {
@@ -1002,8 +1002,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Write a prompt that design process flow verified (create a sample of any product or service delivered to any client as per the scope).",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
-                    "Present a filled-in design process flow/progress sheet documenting key stages, milestones, and change management actions for a selected design project.Also, mention a sample of product or service delivered to client as per the scope."
+                "Stage 2 Prompt": (
+                    "Present a filled-in design process flow/progress sheet documenting key stages, milestones, and change management actions for a selected design project. Create a sample of product based on the scope of the company."
                 )
             }
         ],
@@ -1014,7 +1014,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes selection, approval, and evaluation of suppliers.",
                 "Document Owner": "Procurement Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide supplier evaluation records showing at least two vendors evaluated with outcomes. Include criteria used for assessment and ongoing monitoring actions."
                 )
             },
@@ -1024,7 +1024,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines the purchasing process and controls.",
                 "Document Owner": "Procurement Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show sample purchase orders and evidence of implementation of purchasing procedures, including approval and verification steps."
                 )
             },
@@ -1034,7 +1034,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Form used for registering new vendors/subcontractors.",
                 "Document Owner": "Procurement Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a completed registration form for a sample supplier, noting evaluation and approval process."
                 )
             },
@@ -1044,7 +1044,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Current list of all approved suppliers and subcontractors.",
                 "Document Owner": "Procurement Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the list with at least two example suppliers, including approval status and date of last evaluation."
                 )
             },
@@ -1054,7 +1054,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Form evidencing vendor registration and approval.",
                 "Document Owner": "Procurement Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a completed and signed registration form for a vendor from the current year."
                 )
             }
@@ -1066,7 +1066,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes service, production, and contract controls.",
                 "Document Owner": "Operations Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide records (job cards, work instructions, service records) showing controls during product or service provision for a sample client."
                 )
             },
@@ -1076,8 +1076,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Work instructions addressing health, safety, and environment.",
                 "Document Owner": "HSE Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
-                    "Present completed HSE inspection checklists or records, including a recent random safety inspection outcome."
+                "Stage 2 Prompt": (
+                    "Present completed HSE inspection checklists or records, including a recent random safety inspection outcome.Mention a HSE inspection record verified based on the scope."
                 )
             }
         ],
@@ -1088,7 +1088,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines controls for document identification and traceability.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show examples (logs, tags, digital tracking) of how documents or products are identified and traced throughout service or production."
                 )
             },
@@ -1098,7 +1098,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Form to log and authorize changes to production/service.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a completed form for a recent change in production or service, detailing the traceability process."
                 )
             },
@@ -1108,7 +1108,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Master index of all documents for traceability.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show how the master list supports document traceability, with an annotated example."
                 )
             },
@@ -1118,7 +1118,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Request form for document changes affecting traceability.",
                 "Document Owner": "All Staff",
                 "Approved By": "Document Control Coordinator",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a sample of this form including traceability notes and resolution for one recent request."
                 )
             }
@@ -1130,7 +1130,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Log of customer or external provider property received.",
                 "Document Owner": "Warehouse Supervisor",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a filled form evidencing the receipt and safeguarding of property from a customer or supplier."
                 )
             }
@@ -1142,7 +1142,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes measures for preservation of product through production/service lifecycle.",
                 "Document Owner": "Operations Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Explain methods for preserving product/service conformity (packaging, storage, labeling), and give an example from a recent job."
                 )
             }
@@ -1154,7 +1154,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Reports on customer feedback and post-delivery activities.",
                 "Document Owner": "Customer Service Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a recent customer feedback report, delivery note, or post-delivery survey analysis with a completed action."
                 )
             }
@@ -1166,7 +1166,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes the process for managing changes affecting product/service.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a sample record of a product/service change from initial request to implementation for one project/client."
                 )
             },
@@ -1176,7 +1176,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Form for logging changes as part of the change management process.",
                 "Document Owner": "All Staff",
                 "Approved By": "Document Control Coordinator",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a completed change request relating to a service/product delivered, including status and approvals."
                 )
             }
@@ -1188,7 +1188,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Final inspection record for product/service before release.",
                 "Document Owner": "Quality Inspector",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show at least one signed final inspection report for a product or service delivered to a client relevant to your scope."
                 )
             }
@@ -1200,8 +1200,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Procedure to identify, control, and correct nonconforming outputs.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
-                    "Provide records/log for 2-3 nonconforming outputs, including actions taken and follow-up verification."
+                "Stage 2 Prompt": (
+                    "Provide records/log for 2-3 nonconforming outputs, including actions taken and follow-up verification based on the scope of the company."
                 )
             },
             {
@@ -1210,7 +1210,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Log/register of nonconformities, corrections, and status.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the registry for the last year with two sample entries, their closure or current status, including evidence for action."
                 )
             }
@@ -1222,7 +1222,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines how OHSMS performance is measured, analyzed, and evaluated.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show monitoring/measurement plan, filled records, and summaries/results for the last quarter."
                 )
             }
@@ -1234,7 +1234,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Procedure for evaluation and management of compliance obligations.",
                 "Document Owner": "Compliance Officer",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide compliance monitoring records, audits, or status reports showing periodic review."
                 )
             }
@@ -1246,8 +1246,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes how legal and other requirements are identified and complied with.",
                 "Document Owner": "Compliance Officer",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Show a recent update or review record for legal requirements, with one example of a regulatory change tracked and addressed."
+                "Stage 2 Prompt": (
+                    "Show a recent update or review record for legal requirements based on the address and scope of the company, with one example of a regulatory change tracked and addressed."
                 )
             },
             {
@@ -1256,7 +1256,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Up-to-date register of all relevant legal requirements.",
                 "Document Owner": "Compliance Officer",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a copy of the legal register and highlight the learning/action taken on a new requirement in the last 6 months."
                 )
             }
@@ -1268,7 +1268,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Record and analysis/results of monitored data for continual improvement.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a sample analysis record and explain the actions decided based on this data analysis."
                 )
             }
@@ -1280,7 +1280,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes how internal audits are planned, conducted, and followed up.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the last two internal audit reports, including audit program and corrections for non-conformities identified."
                 )
             },
@@ -1290,7 +1290,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Schedule/calendar of planned internal audits.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current annual audit program including areas covered and assigned auditors."
                 )
             },
@@ -1300,7 +1300,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Detailed audit timetable and auditor assignments.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the detailed schedule and confirmation/audit notifications sent."
                 )
             },
@@ -1310,7 +1310,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Completed report with findings, recommendations, and corrective action.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a recent audit report, and summarize 2-3 nonconformities found, including their closure status and responsible persons."
                 )
             }
@@ -1322,7 +1322,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines the management review process and requirements.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show management review schedule, agenda, and minutes for the most recent meeting, including actions and persons responsible."
                 )
             },
@@ -1332,7 +1332,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Signed minutes from management review meetings.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the last approved minutes and highlight key outputs, decisions, and assigned actions."
                 )
             }
@@ -1344,7 +1344,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Details how non-conformities are corrected and actions tracked.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide evidence of at least two corrective actions still in progress, along with their status, owner, and planned closure date."
                 )
             },
@@ -1354,7 +1354,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Register/log showing status of all non-conformities and corrective actions.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show registry with status updates and details for at least two nonconformities (open and closed)."
                 )
             },
@@ -1364,7 +1364,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Detailed report evidencing closure and verification for each nonconformity.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a sample nonconformity closure report, including root cause, corrections, actions, and verification."
                 )
             }
@@ -1376,7 +1376,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Signed minutes, including continual improvement review and actions.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show evidence that continual improvement is reviewed and driven through management review (e.g., improvement actions and tracking)."
                 )
             },
@@ -1386,8 +1386,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Evidence that continual improvement is achieved through corrective actions.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Submit an example where a nonconformity or suggestion led to a documented improvement of the management system or process."
+                "Stage 2 Prompt": (
+                    "Submit an example where a nonconformity or suggestion led to a documented improvement of the management system or process. Mention a product or sample."
                 )
             }
         ]
@@ -1403,8 +1403,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes the organization's integrated management system and its context.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Describe in detail the organization’s name, nature of business, core activities, industry sector, and the names/designations of its top management from the attendance sheet, in a formal ISO audit style."
+                "Stage 2 Prompt": (
+                    "Describe in detail about company activities, top management name"
                 )
             },
             {
@@ -1413,7 +1413,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Identifies strengths, weaknesses, opportunities, and threats.",
                 "Document Owner": "Process Owner",
                 "Approved By": "Top Management",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a completed SWOT analysis form and describe how results influence actions, with a concrete example of a weakness or opportunity addressed."
                 )
             },
@@ -1423,7 +1423,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines external and internal issues relevant to organizational purpose and QMS.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the documented issues and explain, with examples, where any of these have prompted operational or policy changes."
                 )
             },
@@ -1435,8 +1435,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Process for identifying interested parties and their relevant needs and expectations.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Describe and show evidence that the organization has identified all relevant interested parties and determined their needs and expectations. List at least 4-5 actual interested parties (e.g., customers, regulators, staff, suppliers, contractors) and specific expectations for each. Show how this information is integrated into your management system."
+                "Stage 2 Prompt": (
+                    "Describe and show evidence that the organization has identified all relevant interested parties and determined their needs and expectations. List at least 4-5 actual interested parties (e.g., customers, regulators, staff, suppliers, contractors) and specific expectations for each. Show how this information according to the scope and address of the company."
                 )
             },
             {
@@ -1445,7 +1445,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Lists internal and external interested parties with their needs.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current interested parties list, and for 4-5 entries, show evidence that their expectations are tracked and acted on, such as communications, meeting minutes, or actions taken."
                 )
             }
@@ -1457,8 +1457,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines the boundaries and applicability of the management system.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Provide the documented scope and give real examples showing what is included and excluded; e.g., reference specific departments, locations, or processes."
+                "Stage 2 Prompt": (
+                    "Provide the documented scope and also create a evidence(like purchase order, invoice or contract) to justify the scope."
                 )
             }
         ],
@@ -1469,7 +1469,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "A diagram showing process interactions and interfaces.",
                 "Document Owner": "Process Owner",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the process map/chart and explain with evidence (e.g., training records, cross-functional meetings) how these interactions are communicated and implemented."
                 )
             },
@@ -1479,7 +1479,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Comprehensive inventory of all active management system procedures.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current version of the procedures list and a tracked change showing a recent update or addition."
                 )
             }
@@ -1491,8 +1491,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes top management’s leadership approach in the QMS.",
                 "Document Owner": "Managing Director",
                 "Approved By": "Board",
-                "Stage 1 Prompt": (
-                    "Give examples of leadership in action (e.g., signed policies, management review participation, communication records) showing how top management demonstrates commitment and also mention the names of person in top management using the attendance sheet that he/she is commited for conformance of the management system"
+                "Stage 2 Prompt": (
+                    "Give examples of leadership in action (e.g., signed policies, management review participation, communication records) showing how top management demonstrates commitment and also mention the name of person in top management using the attendance sheet."
                 )
             },
             {
@@ -1501,8 +1501,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Policy for customer focus, satisfaction, and requirements.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Provide evidence (customer feedback reviews, complaint logs, actions taken) that customer focus is implemented and monitored throught the policy."
+                "Stage 2 Prompt": (
+                    "Provide evidence (customer feedback reviews, complaint logs, actions taken) that customer focus is implemented and monitored through websites, emails, display at reception."
                 )
             },
         ],
@@ -1513,7 +1513,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Signed and communicated QHSE policy document.",
                 "Document Owner": "Managing Director",
                 "Approved By": "Board",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current signed QHSE policy; show evidence of how it is communicated and understood at relevant functions and levels."
                 )
             }
@@ -1525,8 +1525,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines functional roles, responsibilities, authorities.",
                 "Document Owner": "HR Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Provide responsibility matrix or job descriptions and show evidence they are followed (e.g. signed documents, role-based process assignments). Also mention a name to justify this using a name from attendance sheet."
+                "Stage 2 Prompt": (
+                    "Provide responsibility matrix or job descriptions and show evidence they are followed (e.g. signed documents, role-based process assignments). Also, mention a employee from the attendance sheet."
                 )
             }
         ],
@@ -1537,8 +1537,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Process for involving employees in decisions affecting QHSE.",
                 "Document Owner": "HR Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Present meeting minutes, suggestion system outputs, or other records showing worker involvement in QMS/EMS/OHSMS activities."
+                "Stage 2 Prompt": (
+                    "Present meeting minutes, suggestion system outputs, or other records showing worker involvement in OHSMS activities. Mention a name from the attendance sheet."
                 )
             }
         ],
@@ -1549,8 +1549,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Documents risk and opportunity assessment and handling.",
                 "Document Owner": "Risk Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Show risk register(s) and evidence that risks/opportunities are regularly identified, assessed, and acted on (e.g., risk reviews, controls implemented). Also, mention 4-5 risks according to the scope of the company and their mitigation plan."
+                "Stage 2 Prompt": (
+                    "Show risk register(s) and evidence that risks/opportunities are regularly identified, assessed, and acted on (e.g., risk reviews, controls implemented). Mention 4-5 risks according to the scope and their mitigation plan."
                 )
             },
             {
@@ -1559,7 +1559,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Record of identified risks and opportunities.",
                 "Document Owner": "Risk Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current registry and examples of actions taken on identified risks/opportunities."
                 )
             },
@@ -1571,8 +1571,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "How to identify and manage environmental aspects and impacts.",
                 "Document Owner": "EHS Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Provide a completed impact assessment, and show how significant impacts are managed in your daily/operational practices. Also, mention two environmental aspect according to the scope."
+                "Stage 2 Prompt": (
+                    "Provide a completed impact assessment, and show how significant impacts are managed in your daily/operational practices. Mention any 4 enviornmental aspect based on the scope, and elaborate the assessment methodology."
                 )
             },
             {
@@ -1581,8 +1581,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Process for hazard identification and risk evaluation.",
                 "Document Owner": "Safety Officer",
                 "Approved By": "EHS Manager",
-                "Stage 1 Prompt": (
-                    "Show a record of identified hazards and evidence of implemented controls or corrective actions. Also, write any 2 hazards based on the scope of company."
+                "Stage 2 Prompt": (
+                    "Show a record of identified hazards and evidence of implemented controls or corrective actions. Mention any 4 hazards based on the scope and elaborate the assessment methodology."
                 )
             },
             {
@@ -1591,7 +1591,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Filled record of aspects and impact analyses.",
                 "Document Owner": "EHS Manager",
                 "Approved By": "Top Management",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the current filled record and evidence that it's regularly reviewed and updated."
                 )
             },
@@ -1601,7 +1601,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Actual hazard analysis and risk treatment records.",
                 "Document Owner": "Safety Officer",
                 "Approved By": "EHS Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Present completed forms with evidence of actions taken as a result (e.g. mitigation implemented)."
                 )
             }
@@ -1613,8 +1613,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Process to identify, access and comply with legal/other requirements.",
                 "Document Owner": "Compliance Officer",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Show the process for legal requirement identification, and current legal register. Mention legal requirement according to the country and scope of the company."
+                "Stage 2 Prompt": (
+                    "Show the process for legal requirement identification, and current legal register. Give an example of recent new/changed requirement tracked and acted on. Also mention the legal requirement based on the country and scope of the company."
                 )
             },
             {
@@ -1623,7 +1623,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Register of legal/other compliance requirements.",
                 "Document Owner": "Compliance Officer",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide an up-to-date legal register and show evidence of ongoing review/updates."
                 )
             }
@@ -1635,8 +1635,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "How to identify and manage environmental aspects and impacts.",
                 "Document Owner": "EHS Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Provide a completed impact assessment, and show how significant impacts are managed in your daily/operational practices. Also, mention two environmental aspect according to the scope."
+                "Stage 2 Prompt": (
+                    "Provide a completed impact assessment, and show how significant impacts are managed in your daily/operational practices. Mention any 4 enviornmental aspect based on the scope, and elaborate the assessment methodology."
                 )
             },
             {
@@ -1645,8 +1645,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Process for hazard identification and risk evaluation.",
                 "Document Owner": "Safety Officer",
                 "Approved By": "EHS Manager",
-                "Stage 1 Prompt": (
-                    "Show a record of identified hazards and evidence of implemented controls or corrective actions. Also, write any 2 hazards based on the scope of company."
+                "Stage 2 Prompt": (
+                    "Show a record of identified hazards and evidence of implemented controls or corrective actions. Mention any 4 hazards based on the scope and elaborate the assessment methodology."
                 )
             },
             {
@@ -1655,7 +1655,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Filled record of aspects and impact analyses.",
                 "Document Owner": "EHS Manager",
                 "Approved By": "Top Management",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the current filled record and evidence that it's regularly reviewed and updated."
                 )
             },
@@ -1665,7 +1665,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Actual hazard analysis and risk treatment records.",
                 "Document Owner": "Safety Officer",
                 "Approved By": "EHS Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Present completed forms with evidence of actions taken as a result (e.g. mitigation implemented)."
                 )
             }
@@ -1677,8 +1677,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Records QHSE objectives, plans, performance indicators.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Provide current QHSE objectives, records of performance vs objectives, and evidence of action when objectives are not achieved. Write atleast 4 objectives according to the scope."
+                "Stage 2 Prompt": (
+                    "Write at least 4 quality, environment, health and safety objectives and write the achieved results so far."
                 )
             },
             {
@@ -1687,7 +1687,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Filled records of objective monitoring/action plans.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Top Management",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show filled action plans and monitoring records, and describe a real corrective action triggered following a missed target."
                 )
             }
@@ -1699,7 +1699,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Inventory of major assets and machinery.",
                 "Document Owner": "Asset Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current asset list and evidence it's maintained and updated regularly; provide an example of how maintenance is scheduled using the list."
                 )
             },
@@ -1709,7 +1709,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Schedules and records for maintenance/calibration.",
                 "Document Owner": "Maintenance Supervisor",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show this year's plan and proof that maintenance and calibration are performed as scheduled (e.g., completed checklists, certificates)."
                 )
             }
@@ -1721,7 +1721,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "How to manage and verify employee competency.",
                 "Document Owner": "HR Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show training and competence procedure and evidence (training records, competence evaluations) that personnel are competent for roles assigned."
                 )
             },
@@ -1731,8 +1731,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Matrix of staff roles, competencies, qualification status.",
                 "Document Owner": "HR Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
-                    "Show the current competence matrix and evidence that gaps are tracked and closed with actual data from the past year. Also, mention a name with the role from the attendance sheet."
+                "Stage 2 Prompt": (
+                    "Show the current competence matrix and evidence that gaps are tracked and closed with actual data from the past year.Mention the name of employee that competency verified from the attendance sheet."
                 )
             },
             {
@@ -1741,8 +1741,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Planned training events for the year.",
                 "Document Owner": "HR Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
-                    "Provide recent annual training plan and proof of completed sessions."
+                "Stage 2 Prompt": (
+                    "Provide recent annual training plan and proof of completed sessions.Mention 2 to 3 training topics to be delivered in year based on the scope."
                 )
             },
             {
@@ -1751,7 +1751,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Evaluation of training effectiveness.",
                 "Document Owner": "Training Coordinator",
                 "Approved By": "HR Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Present completed effectiveness evaluations and corrective actions taken if training outcomes were not met."
                 )
             },
@@ -1761,7 +1761,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Records of all training carried out in the year.",
                 "Document Owner": "HR Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show signed training attendance records and certificates for at least 4 different trainings."
                 )
             },
@@ -1771,8 +1771,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Evaluation records for individual competence.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "HR Manager",
-                "Stage 1 Prompt": (
-                    "Submit actual filled-in evaluation forms and show how incompetence is identified and corrected. Also, mention a name with designation and what training was provided using the names from attendance sheet."
+                "Stage 2 Prompt": (
+                    "Submit actual filled-in evaluation forms and show how incompetence is identified and corrected.Mention a name to justify this from the attendance sheet."
                 )
             }
         ],
@@ -1783,7 +1783,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Manual describing the organization's OHSMS.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show physical/digital copies of the manual and evidence that staff have access and reference it in work."
                 )
             }
@@ -1795,7 +1795,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Manual includes communication procedures.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Explain how communication requirements from the manual are followed in practice; provide communications sent using the guidance."
                 )
             },
@@ -1805,8 +1805,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "How the organization manages its internal/external communications.",
                 "Document Owner": "Communications Coordinator",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Show an example of actual internal and external communication regarding QMS (e.g. safety alerts, customer letters)."
+                "Stage 2 Prompt": (
+                    "Show an example of actual internal and external communication regarding QMS (e.g. safety alerts, customer letters). Also, list the topics what to communicate, when to communicate, when to communicate."
                 )
             }
         ],
@@ -1817,7 +1817,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Document control process explained.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a controlled document with revision history, and evidence that obsolete versions are removed from use."
                 )
             },
@@ -1827,7 +1827,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "List of all controlled documents.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current master list, mark controlled/uncontrolled copies, and show an example of a document recently added or revised."
                 )
             },
@@ -1837,7 +1837,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Documents controlled that come from outside the organization.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide examples showing external documents tracked and updated—e.g., a regulation update tracked in the system."
                 )
             },
@@ -1847,7 +1847,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Form for requesting changes to documents.",
                 "Document Owner": "All Staff",
                 "Approved By": "Document Control Coordinator",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide one completed change request form and show how requests are logged and tracked."
                 )
             }
@@ -1860,7 +1860,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Document Owner": "",
                 # Not directly specified; usually Operations Manager or Process Owner – fill as per your org chart
                 "Approved By": "",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "List all core operational procedures maintained under the OHSMS, as per your organization's scope. Show how these procedures are controlled and regularly reviewed."
                 )
             },
@@ -1870,17 +1870,17 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Change management documentation related to operational processes.",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show completed change management forms reflecting changes in any operational procedure or process over the last year."
                 )
             },
             {
-                "Document Name": "Records of Hazard Analysis and Risk Treatement",
+                "Document Name": "Records of Hazard Analysis and Risk Treatment",
                 "Document Number": "OHSMS-F-10",
                 "Guidance/Description": "Write a prompt about the hazard analysis and risk treatment identified for each operational procedure.",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide filled records of hazard analysis and risk treatment performed for major operational activities. Give an example illustrating how results from these records led to implemented controls."
                 )
             }
@@ -1892,7 +1892,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Write a prompt to list of core operation procedures as per the scope.",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the master list of operational procedures with reference to customer requirements. Provide a sample showing the trace from customer requirements to documented procedures."
                 )
             },
@@ -1902,7 +1902,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Write a prompt that emergency evacuation plan verified and found evident.",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show your current emergency preparedness procedure. Provide evidence (e.g., evacuation drill records) that the plan is tested and known by staff."
                 )
             }
@@ -1914,8 +1914,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Write a prompt that design & development prompt verified (create a sample of any product or service delivered to any client as per the scope).",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
-                    "Show a sample of design & development documentation for a product or service as per your organization’s scope. Include input/output records and version control."
+                "Stage 2 Prompt": (
+                    "Show a sample of design & development documentation for a product or service as per your organization’s scope. Create a sample of any product or service delivered to any client as per the scope and address of the company."
                 )
             },
             {
@@ -1924,8 +1924,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Write a prompt that design review and approval verified (create a sample of any product or service delivered to any client as per the scope).",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
-                    "Provide a completed design review and approval sheet for a recent project, showing signatures/approvals and identified issues. Also, mention a sample of product or service delivered to client as per the scope."
+                "Stage 2 Prompt": (
+                    "Show a sample of design & development documentation for a product or service as per your organization’s scope."
                 )
             },
             {
@@ -1934,8 +1934,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Write a prompt that design process flow verified (create a sample of any product or service delivered to any client as per the scope).",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
-                    "Present a filled-in design process flow/progress sheet documenting key stages, milestones, and change management actions for a selected design project.Also, mention a sample of product or service delivered to client as per the scope."
+                "Stage 2 Prompt": (
+                    "Present a filled-in design process flow/progress sheet documenting key stages, milestones, and change management actions for a selected design project. Create a sample of product based on the scope of the company."
                 )
             }
         ],
@@ -1946,7 +1946,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes selection, approval, and evaluation of suppliers.",
                 "Document Owner": "Procurement Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide supplier evaluation records showing at least two vendors evaluated with outcomes. Include criteria used for assessment and ongoing monitoring actions."
                 )
             },
@@ -1956,7 +1956,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines the purchasing process and controls.",
                 "Document Owner": "Procurement Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show sample purchase orders and evidence of implementation of purchasing procedures, including approval and verification steps."
                 )
             },
@@ -1966,7 +1966,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Form used for registering new vendors/subcontractors.",
                 "Document Owner": "Procurement Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a completed registration form for a sample supplier, noting evaluation and approval process."
                 )
             },
@@ -1976,7 +1976,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Current list of all approved suppliers and subcontractors.",
                 "Document Owner": "Procurement Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the list with at least two example suppliers, including approval status and date of last evaluation."
                 )
             },
@@ -1986,7 +1986,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Form evidencing vendor registration and approval.",
                 "Document Owner": "Procurement Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a completed and signed registration form for a vendor from the current year."
                 )
             }
@@ -1998,7 +1998,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes service, production, and contract controls.",
                 "Document Owner": "Operations Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide records (job cards, work instructions, service records) showing controls during product or service provision for a sample client."
                 )
             },
@@ -2008,8 +2008,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Work instructions addressing health, safety, and environment.",
                 "Document Owner": "HSE Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
-                    "Present completed HSE inspection checklists or records, including a recent random safety inspection outcome."
+                "Stage 2 Prompt": (
+                    "Present completed HSE inspection checklists or records, including a recent random safety inspection outcome.Mention a HSE inspection record verified based on the scope."
                 )
             }
         ],
@@ -2020,7 +2020,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines controls for document identification and traceability.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show examples (logs, tags, digital tracking) of how documents or products are identified and traced throughout service or production."
                 )
             },
@@ -2030,17 +2030,17 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Form to log and authorize changes to production/service.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a completed form for a recent change in production or service, detailing the traceability process."
                 )
             },
             {
                 "Document Name": "Master List of Documents",
-                "Document Number": "XXX-OHSMS-F-04",
+                "Document Number": "OHSMS-F-04",
                 "Guidance/Description": "Master index of all documents for traceability.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show how the master list supports document traceability, with an annotated example."
                 )
             },
@@ -2050,7 +2050,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Request form for document changes affecting traceability.",
                 "Document Owner": "All Staff",
                 "Approved By": "Document Control Coordinator",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a sample of this form including traceability notes and resolution for one recent request."
                 )
             }
@@ -2062,7 +2062,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Log of customer or external provider property received.",
                 "Document Owner": "Warehouse Supervisor",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a filled form evidencing the receipt and safeguarding of property from a customer or supplier."
                 )
             }
@@ -2074,7 +2074,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes measures for preservation of product through production/service lifecycle.",
                 "Document Owner": "Operations Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Explain methods for preserving product/service conformity (packaging, storage, labeling), and give an example from a recent job."
                 )
             }
@@ -2086,7 +2086,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Reports on customer feedback and post-delivery activities.",
                 "Document Owner": "Customer Service Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a recent customer feedback report, delivery note, or post-delivery survey analysis with a completed action."
                 )
             }
@@ -2098,7 +2098,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes the process for managing changes affecting product/service.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a sample record of a product/service change from initial request to implementation for one project/client."
                 )
             },
@@ -2108,7 +2108,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Form for logging changes as part of the change management process.",
                 "Document Owner": "All Staff",
                 "Approved By": "Document Control Coordinator",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a completed change request relating to a service/product delivered, including status and approvals."
                 )
             }
@@ -2120,7 +2120,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Final inspection record for product/service before release.",
                 "Document Owner": "Quality Inspector",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show at least one signed final inspection report for a product or service delivered to a client relevant to your scope."
                 )
             }
@@ -2132,8 +2132,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Procedure to identify, control, and correct nonconforming outputs.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
-                    "Provide records/log for 2-3 nonconforming outputs, including actions taken and follow-up verification."
+                "Stage 2 Prompt": (
+                    "Provide records/log for 2-3 nonconforming outputs, including actions taken and follow-up verification based on the scope of the company."
                 )
             },
             {
@@ -2142,7 +2142,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Log/register of nonconformities, corrections, and status.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the registry for the last year with two sample entries, their closure or current status, including evidence for action."
                 )
             }
@@ -2154,7 +2154,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines how OHSMS performance is measured, analyzed, and evaluated.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show monitoring/measurement plan, filled records, and summaries/results for the last quarter."
                 )
             }
@@ -2166,7 +2166,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Procedure for evaluation and management of compliance obligations.",
                 "Document Owner": "Compliance Officer",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide compliance monitoring records, audits, or status reports showing periodic review."
                 )
             }
@@ -2178,8 +2178,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes how legal and other requirements are identified and complied with.",
                 "Document Owner": "Compliance Officer",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Show a recent update or review record for legal requirements, with one example of a regulatory change tracked and addressed."
+                "Stage 2 Prompt": (
+                    "Show a recent update or review record for legal requirements based on the address and scope of the company, with one example of a regulatory change tracked and addressed."
                 )
             },
             {
@@ -2188,7 +2188,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Up-to-date register of all relevant legal requirements.",
                 "Document Owner": "Compliance Officer",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a copy of the legal register and highlight the learning/action taken on a new requirement in the last 6 months."
                 )
             }
@@ -2200,7 +2200,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Record and analysis/results of monitored data for continual improvement.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a sample analysis record and explain the actions decided based on this data analysis."
                 )
             }
@@ -2212,7 +2212,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes how internal audits are planned, conducted, and followed up.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the last two internal audit reports, including audit program and corrections for non-conformities identified."
                 )
             },
@@ -2222,7 +2222,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Schedule/calendar of planned internal audits.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current annual audit program including areas covered and assigned auditors."
                 )
             },
@@ -2232,7 +2232,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Detailed audit timetable and auditor assignments.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the detailed schedule and confirmation/audit notifications sent."
                 )
             },
@@ -2242,7 +2242,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Completed report with findings, recommendations, and corrective action.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a recent audit report, and summarize 2-3 nonconformities found, including their closure status and responsible persons."
                 )
             }
@@ -2254,7 +2254,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines the management review process and requirements.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show management review schedule, agenda, and minutes for the most recent meeting, including actions and persons responsible."
                 )
             },
@@ -2264,7 +2264,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Signed minutes from management review meetings.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the last approved minutes and highlight key outputs, decisions, and assigned actions."
                 )
             }
@@ -2276,7 +2276,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Details how non-conformities are corrected and actions tracked.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide evidence of at least two corrective actions still in progress, along with their status, owner, and planned closure date."
                 )
             },
@@ -2286,7 +2286,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Register/log showing status of all non-conformities and corrective actions.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show registry with status updates and details for at least two nonconformities (open and closed)."
                 )
             },
@@ -2296,7 +2296,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Detailed report evidencing closure and verification for each nonconformity.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a sample nonconformity closure report, including root cause, corrections, actions, and verification."
                 )
             }
@@ -2308,7 +2308,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Signed minutes, including continual improvement review and actions.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show evidence that continual improvement is reviewed and driven through management review (e.g., improvement actions and tracking)."
                 )
             },
@@ -2318,8 +2318,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Evidence that continual improvement is achieved through corrective actions.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Submit an example where a nonconformity or suggestion led to a documented improvement of the management system or process."
+                "Stage 2 Prompt": (
+                    "Submit an example where a nonconformity or suggestion led to a documented improvement of the management system or process. Mention a product or sample."
                 )
             }
         ]
@@ -2334,8 +2334,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes the organization's integrated management system and its context.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Describe in detail the organization’s name, nature of business, core activities, industry sector, and the names/designations of its top management from the attendance sheet, in a formal ISO audit style."
+                "Stage 2 Prompt": (
+                    "Describe in detail about company activities, top management name"
                 )
             },
             {
@@ -2344,7 +2344,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Identifies strengths, weaknesses, opportunities, and threats.",
                 "Document Owner": "Process Owner",
                 "Approved By": "Top Management",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a completed SWOT analysis form and describe how results influence actions, with a concrete example of a weakness or opportunity addressed."
                 )
             },
@@ -2354,7 +2354,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines external and internal issues relevant to organizational purpose and QMS.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the documented issues and explain, with examples, where any of these have prompted operational or policy changes."
                 )
             },
@@ -2366,8 +2366,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Process for identifying interested parties and their relevant needs and expectations.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Describe and show evidence that the organization has identified all relevant interested parties and determined their needs and expectations. List at least 4-5 actual interested parties (e.g., customers, regulators, staff, suppliers, contractors) and specific expectations for each. Show how this information is integrated into your management system."
+                "Stage 2 Prompt": (
+                    "Describe and show evidence that the organization has identified all relevant interested parties and determined their needs and expectations. List at least 4-5 actual interested parties (e.g., customers, regulators, staff, suppliers, contractors) and specific expectations for each. Show how this information according to the scope and address of the company."
                 )
             },
             {
@@ -2376,7 +2376,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Lists internal and external interested parties with their needs.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current interested parties list, and for 4-5 entries, show evidence that their expectations are tracked and acted on, such as communications, meeting minutes, or actions taken."
                 )
             }
@@ -2388,8 +2388,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines the boundaries and applicability of the management system.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Provide the documented scope and give real examples showing what is included and excluded; e.g., reference specific departments, locations, or processes."
+                "Stage 2 Prompt": (
+                    "Provide the documented scope and also create a evidence(like purchase order, invoice or contract) to justify the scope."
                 )
             }
         ],
@@ -2400,7 +2400,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "A diagram showing process interactions and interfaces.",
                 "Document Owner": "Process Owner",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the process map/chart and explain with evidence (e.g., training records, cross-functional meetings) how these interactions are communicated and implemented."
                 )
             },
@@ -2410,7 +2410,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Comprehensive inventory of all active management system procedures.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current version of the procedures list and a tracked change showing a recent update or addition."
                 )
             }
@@ -2422,8 +2422,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes top management’s leadership approach in the QMS.",
                 "Document Owner": "Managing Director",
                 "Approved By": "Board",
-                "Stage 1 Prompt": (
-                    "Give examples of leadership in action (e.g., signed policies, management review participation, communication records) showing how top management demonstrates commitment and also mention the names of person in top management using the attendance sheet that he/she is commited for conformance of the management system"
+                "Stage 2 Prompt": (
+                    "Give examples of leadership in action (e.g., signed policies, management review participation, communication records) showing how top management demonstrates commitment and also mention the name of person in top management using the attendance sheet."
                 )
             },
             {
@@ -2432,8 +2432,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Policy for customer focus, satisfaction, and requirements.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Provide evidence (customer feedback reviews, complaint logs, actions taken) that customer focus is implemented and monitored throught the policy."
+                "Stage 2 Prompt": (
+                    "Provide evidence (customer feedback reviews, complaint logs, actions taken) that customer focus is implemented and monitored through websites, emails, display at reception."
                 )
             },
         ],
@@ -2444,7 +2444,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Signed and communicated QHSE policy document.",
                 "Document Owner": "Managing Director",
                 "Approved By": "Board",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current signed QHSE policy; show evidence of how it is communicated and understood at relevant functions and levels."
                 )
             }
@@ -2456,8 +2456,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines functional roles, responsibilities, authorities.",
                 "Document Owner": "HR Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Provide responsibility matrix or job descriptions and show evidence they are followed (e.g. signed documents, role-based process assignments). Also mention a name to justify this using a name from attendance sheet."
+                "Stage 2 Prompt": (
+                    "Provide responsibility matrix or job descriptions and show evidence they are followed (e.g. signed documents, role-based process assignments). Also, mention a employee from the attendance sheet."
                 )
             }
         ],
@@ -2468,8 +2468,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Process for involving employees in decisions affecting QHSE.",
                 "Document Owner": "HR Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Present meeting minutes, suggestion system outputs, or other records showing worker involvement in QMS/EMS/OHSMS activities."
+                "Stage 2 Prompt": (
+                    "Present meeting minutes, suggestion system outputs, or other records showing worker involvement in OHSMS activities. Mention a name from the attendance sheet."
                 )
             }
         ],
@@ -2480,8 +2480,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Documents risk and opportunity assessment and handling.",
                 "Document Owner": "Risk Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Show risk register(s) and evidence that risks/opportunities are regularly identified, assessed, and acted on (e.g., risk reviews, controls implemented). Also, mention 4-5 risks according to the scope of the company and their mitigation plan."
+                "Stage 2 Prompt": (
+                    "Show risk register(s) and evidence that risks/opportunities are regularly identified, assessed, and acted on (e.g., risk reviews, controls implemented). Mention 4-5 risks according to the scope and their mitigation plan."
                 )
             },
             {
@@ -2490,7 +2490,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Record of identified risks and opportunities.",
                 "Document Owner": "Risk Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current registry and examples of actions taken on identified risks/opportunities."
                 )
             },
@@ -2502,8 +2502,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "How to identify and manage environmental aspects and impacts.",
                 "Document Owner": "EHS Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Provide a completed impact assessment, and show how significant impacts are managed in your daily/operational practices. Also, mention two environmental aspect according to the scope."
+                "Stage 2 Prompt": (
+                    "Provide a completed impact assessment, and show how significant impacts are managed in your daily/operational practices. Mention any 4 enviornmental aspect based on the scope, and elaborate the assessment methodology."
                 )
             },
             {
@@ -2512,8 +2512,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Process for hazard identification and risk evaluation.",
                 "Document Owner": "Safety Officer",
                 "Approved By": "EHS Manager",
-                "Stage 1 Prompt": (
-                    "Show a record of identified hazards and evidence of implemented controls or corrective actions. Also, write any 2 hazards based on the scope of company."
+                "Stage 2 Prompt": (
+                    "Show a record of identified hazards and evidence of implemented controls or corrective actions. Mention any 4 hazards based on the scope and elaborate the assessment methodology."
                 )
             },
             {
@@ -2522,7 +2522,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Filled record of aspects and impact analyses.",
                 "Document Owner": "EHS Manager",
                 "Approved By": "Top Management",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the current filled record and evidence that it's regularly reviewed and updated."
                 )
             },
@@ -2532,7 +2532,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Actual hazard analysis and risk treatment records.",
                 "Document Owner": "Safety Officer",
                 "Approved By": "EHS Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Present completed forms with evidence of actions taken as a result (e.g. mitigation implemented)."
                 )
             }
@@ -2544,8 +2544,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Process to identify, access and comply with legal/other requirements.",
                 "Document Owner": "Compliance Officer",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Show the process for legal requirement identification, and current legal register. Mention legal requirement according to the country and scope of the company."
+                "Stage 2 Prompt": (
+                    "Show the process for legal requirement identification, and current legal register. Give an example of recent new/changed requirement tracked and acted on. Also mention the legal requirement based on the country and scope of the company."
                 )
             },
             {
@@ -2554,7 +2554,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Register of legal/other compliance requirements.",
                 "Document Owner": "Compliance Officer",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide an up-to-date legal register and show evidence of ongoing review/updates."
                 )
             }
@@ -2566,8 +2566,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "How to identify and manage environmental aspects and impacts.",
                 "Document Owner": "EHS Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Provide a completed impact assessment, and show how significant impacts are managed in your daily/operational practices. Also, mention two environmental aspect according to the scope."
+                "Stage 2 Prompt": (
+                    "Provide a completed impact assessment, and show how significant impacts are managed in your daily/operational practices. Mention any 4 enviornmental aspect based on the scope, and elaborate the assessment methodology."
                 )
             },
             {
@@ -2576,8 +2576,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Process for hazard identification and risk evaluation.",
                 "Document Owner": "Safety Officer",
                 "Approved By": "EHS Manager",
-                "Stage 1 Prompt": (
-                    "Show a record of identified hazards and evidence of implemented controls or corrective actions. Also, write any 2 hazards based on the scope of company."
+                "Stage 2 Prompt": (
+                    "Show a record of identified hazards and evidence of implemented controls or corrective actions. Mention any 4 hazards based on the scope and elaborate the assessment methodology."
                 )
             },
             {
@@ -2586,7 +2586,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Filled record of aspects and impact analyses.",
                 "Document Owner": "EHS Manager",
                 "Approved By": "Top Management",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the current filled record and evidence that it's regularly reviewed and updated."
                 )
             },
@@ -2596,7 +2596,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Actual hazard analysis and risk treatment records.",
                 "Document Owner": "Safety Officer",
                 "Approved By": "EHS Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Present completed forms with evidence of actions taken as a result (e.g. mitigation implemented)."
                 )
             }
@@ -2608,8 +2608,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Records QHSE objectives, plans, performance indicators.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Provide current QHSE objectives, records of performance vs objectives, and evidence of action when objectives are not achieved. Write atleast 4 objectives according to the scope."
+                "Stage 2 Prompt": (
+                    "Write at least 4 quality, environment, health and safety objectives and write the achieved results so far."
                 )
             },
             {
@@ -2618,7 +2618,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Filled records of objective monitoring/action plans.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Top Management",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show filled action plans and monitoring records, and describe a real corrective action triggered following a missed target."
                 )
             }
@@ -2630,7 +2630,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Inventory of major assets and machinery.",
                 "Document Owner": "Asset Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current asset list and evidence it's maintained and updated regularly; provide an example of how maintenance is scheduled using the list."
                 )
             },
@@ -2640,7 +2640,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Schedules and records for maintenance/calibration.",
                 "Document Owner": "Maintenance Supervisor",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show this year's plan and proof that maintenance and calibration are performed as scheduled (e.g., completed checklists, certificates)."
                 )
             }
@@ -2652,7 +2652,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "How to manage and verify employee competency.",
                 "Document Owner": "HR Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show training and competence procedure and evidence (training records, competence evaluations) that personnel are competent for roles assigned."
                 )
             },
@@ -2662,8 +2662,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Matrix of staff roles, competencies, qualification status.",
                 "Document Owner": "HR Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
-                    "Show the current competence matrix and evidence that gaps are tracked and closed with actual data from the past year. Also, mention a name with the role from the attendance sheet."
+                "Stage 2 Prompt": (
+                    "Show the current competence matrix and evidence that gaps are tracked and closed with actual data from the past year.Mention the name of employee that competency verified from the attendance sheet."
                 )
             },
             {
@@ -2672,8 +2672,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Planned training events for the year.",
                 "Document Owner": "HR Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
-                    "Provide recent annual training plan and proof of completed sessions."
+                "Stage 2 Prompt": (
+                    "Provide recent annual training plan and proof of completed sessions.Mention 2 to 3 training topics to be delivered in year based on the scope."
                 )
             },
             {
@@ -2682,7 +2682,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Evaluation of training effectiveness.",
                 "Document Owner": "Training Coordinator",
                 "Approved By": "HR Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Present completed effectiveness evaluations and corrective actions taken if training outcomes were not met."
                 )
             },
@@ -2692,7 +2692,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Records of all training carried out in the year.",
                 "Document Owner": "HR Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show signed training attendance records and certificates for at least 4 different trainings."
                 )
             },
@@ -2702,8 +2702,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Evaluation records for individual competence.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "HR Manager",
-                "Stage 1 Prompt": (
-                    "Submit actual filled-in evaluation forms and show how incompetence is identified and corrected. Also, mention a name with designation and what training was provided using the names from attendance sheet."
+                "Stage 2 Prompt": (
+                    "Submit actual filled-in evaluation forms and show how incompetence is identified and corrected.Mention a name to justify this from the attendance sheet."
                 )
             }
         ],
@@ -2711,10 +2711,10 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
             {
                 "Document Name": "Integrated Management System Manual",
                 "Document Number": "QHSE-MAN-01",
-                "Guidance/Description": "Manual describing the organization's QHSE.",
+                "Guidance/Description": "Manual describing the organization's IMS.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show physical/digital copies of the manual and evidence that staff have access and reference it in work."
                 )
             }
@@ -2726,7 +2726,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Manual includes communication procedures.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Explain how communication requirements from the manual are followed in practice; provide communications sent using the guidance."
                 )
             },
@@ -2736,8 +2736,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "How the organization manages its internal/external communications.",
                 "Document Owner": "Communications Coordinator",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Show an example of actual internal and external communication regarding QMS (e.g. safety alerts, customer letters)."
+                "Stage 2 Prompt": (
+                    "Show an example of actual internal and external communication regarding QMS (e.g. safety alerts, customer letters). Also, list the topics what to communicate, when to communicate, when to communicate."
                 )
             }
         ],
@@ -2748,7 +2748,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Document control process explained.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a controlled document with revision history, and evidence that obsolete versions are removed from use."
                 )
             },
@@ -2758,7 +2758,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "List of all controlled documents.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current master list, mark controlled/uncontrolled copies, and show an example of a document recently added or revised."
                 )
             },
@@ -2768,7 +2768,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Documents controlled that come from outside the organization.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide examples showing external documents tracked and updated—e.g., a regulation update tracked in the system."
                 )
             },
@@ -2778,7 +2778,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Form for requesting changes to documents.",
                 "Document Owner": "All Staff",
                 "Approved By": "Document Control Coordinator",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide one completed change request form and show how requests are logged and tracked."
                 )
             }
@@ -2791,8 +2791,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Document Owner": "",
                 # Not directly specified; usually Operations Manager or Process Owner – fill as per your org chart
                 "Approved By": "",
-                "Stage 1 Prompt": (
-                    "List all core operational procedures maintained under the QHSE, as per your organization's scope. Show how these procedures are controlled and regularly reviewed."
+                "Stage 2 Prompt": (
+                    "List all core operational procedures maintained under the IMS, as per your organization's scope. Show how these procedures are controlled and regularly reviewed."
                 )
             },
             {
@@ -2801,17 +2801,17 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Change management documentation related to operational processes.",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show completed change management forms reflecting changes in any operational procedure or process over the last year."
                 )
             },
             {
-                "Document Name": "Records of Hazard Analysis and Risk Treatement",
+                "Document Name": "Records of Hazard Analysis and Risk Treatment",
                 "Document Number": "QHSE-F-10",
                 "Guidance/Description": "Write a prompt about the hazard analysis and risk treatment identified for each operational procedure.",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide filled records of hazard analysis and risk treatment performed for major operational activities. Give an example illustrating how results from these records led to implemented controls."
                 )
             }
@@ -2823,7 +2823,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Write a prompt to list of core operation procedures as per the scope.",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the master list of operational procedures with reference to customer requirements. Provide a sample showing the trace from customer requirements to documented procedures."
                 )
             },
@@ -2833,7 +2833,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Write a prompt that emergency evacuation plan verified and found evident.",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show your current emergency preparedness procedure. Provide evidence (e.g., evacuation drill records) that the plan is tested and known by staff."
                 )
             }
@@ -2845,8 +2845,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Write a prompt that design & development prompt verified (create a sample of any product or service delivered to any client as per the scope).",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
-                    "Show a sample of design & development documentation for a product or service as per your organization’s scope. Include input/output records and version control."
+                "Stage 2 Prompt": (
+                    "Show a sample of design & development documentation for a product or service as per your organization’s scope. Create a sample of any product or service delivered to any client as per the scope and address of the company."
                 )
             },
             {
@@ -2855,8 +2855,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Write a prompt that design review and approval verified (create a sample of any product or service delivered to any client as per the scope).",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
-                    "Provide a completed design review and approval sheet for a recent project, showing signatures/approvals and identified issues. Also, mention a sample of product or service delivered to client as per the scope."
+                "Stage 2 Prompt": (
+                    "Show a sample of design & development documentation for a product or service as per your organization’s scope."
                 )
             },
             {
@@ -2865,8 +2865,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Write a prompt that design process flow verified (create a sample of any product or service delivered to any client as per the scope).",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
-                    "Present a filled-in design process flow/progress sheet documenting key stages, milestones, and change management actions for a selected design project.Also, mention a sample of product or service delivered to client as per the scope."
+                "Stage 2 Prompt": (
+                    "Present a filled-in design process flow/progress sheet documenting key stages, milestones, and change management actions for a selected design project. Create a sample of product based on the scope of the company."
                 )
             }
         ],
@@ -2877,7 +2877,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes selection, approval, and evaluation of suppliers.",
                 "Document Owner": "Procurement Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide supplier evaluation records showing at least two vendors evaluated with outcomes. Include criteria used for assessment and ongoing monitoring actions."
                 )
             },
@@ -2887,7 +2887,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines the purchasing process and controls.",
                 "Document Owner": "Procurement Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show sample purchase orders and evidence of implementation of purchasing procedures, including approval and verification steps."
                 )
             },
@@ -2897,7 +2897,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Form used for registering new vendors/subcontractors.",
                 "Document Owner": "Procurement Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a completed registration form for a sample supplier, noting evaluation and approval process."
                 )
             },
@@ -2907,7 +2907,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Current list of all approved suppliers and subcontractors.",
                 "Document Owner": "Procurement Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the list with at least two example suppliers, including approval status and date of last evaluation."
                 )
             },
@@ -2917,7 +2917,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Form evidencing vendor registration and approval.",
                 "Document Owner": "Procurement Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a completed and signed registration form for a vendor from the current year."
                 )
             }
@@ -2929,7 +2929,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes service, production, and contract controls.",
                 "Document Owner": "Operations Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide records (job cards, work instructions, service records) showing controls during product or service provision for a sample client."
                 )
             },
@@ -2939,8 +2939,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Work instructions addressing health, safety, and environment.",
                 "Document Owner": "HSE Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
-                    "Present completed HSE inspection checklists or records, including a recent random safety inspection outcome."
+                "Stage 2 Prompt": (
+                    "Present completed HSE inspection checklists or records, including a recent random safety inspection outcome.Mention a HSE inspection record verified based on the scope."
                 )
             }
         ],
@@ -2951,7 +2951,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines controls for document identification and traceability.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show examples (logs, tags, digital tracking) of how documents or products are identified and traced throughout service or production."
                 )
             },
@@ -2961,17 +2961,17 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Form to log and authorize changes to production/service.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a completed form for a recent change in production or service, detailing the traceability process."
                 )
             },
             {
                 "Document Name": "Master List of Documents",
-                "Document Number": "XXX-QHSE-F-04",
+                "Document Number": "QHSE-F-04",
                 "Guidance/Description": "Master index of all documents for traceability.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show how the master list supports document traceability, with an annotated example."
                 )
             },
@@ -2981,7 +2981,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Request form for document changes affecting traceability.",
                 "Document Owner": "All Staff",
                 "Approved By": "Document Control Coordinator",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a sample of this form including traceability notes and resolution for one recent request."
                 )
             }
@@ -2993,7 +2993,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Log of customer or external provider property received.",
                 "Document Owner": "Warehouse Supervisor",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a filled form evidencing the receipt and safeguarding of property from a customer or supplier."
                 )
             }
@@ -3005,7 +3005,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes measures for preservation of product through production/service lifecycle.",
                 "Document Owner": "Operations Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Explain methods for preserving product/service conformity (packaging, storage, labeling), and give an example from a recent job."
                 )
             }
@@ -3017,7 +3017,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Reports on customer feedback and post-delivery activities.",
                 "Document Owner": "Customer Service Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a recent customer feedback report, delivery note, or post-delivery survey analysis with a completed action."
                 )
             }
@@ -3029,7 +3029,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes the process for managing changes affecting product/service.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a sample record of a product/service change from initial request to implementation for one project/client."
                 )
             },
@@ -3039,7 +3039,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Form for logging changes as part of the change management process.",
                 "Document Owner": "All Staff",
                 "Approved By": "Document Control Coordinator",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a completed change request relating to a service/product delivered, including status and approvals."
                 )
             }
@@ -3051,7 +3051,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Final inspection record for product/service before release.",
                 "Document Owner": "Quality Inspector",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show at least one signed final inspection report for a product or service delivered to a client relevant to your scope."
                 )
             }
@@ -3063,8 +3063,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Procedure to identify, control, and correct nonconforming outputs.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
-                    "Provide records/log for 2-3 nonconforming outputs, including actions taken and follow-up verification."
+                "Stage 2 Prompt": (
+                    "Provide records/log for 2-3 nonconforming outputs, including actions taken and follow-up verification based on the scope of the company."
                 )
             },
             {
@@ -3073,7 +3073,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Log/register of nonconformities, corrections, and status.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the registry for the last year with two sample entries, their closure or current status, including evidence for action."
                 )
             }
@@ -3082,10 +3082,10 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
             {
                 "Document Name": "Procedure for Monitoring & Measurement",
                 "Document Number": "QHSE-P-17",
-                "Guidance/Description": "Defines how QHSE performance is measured, analyzed, and evaluated.",
+                "Guidance/Description": "Defines how IMS performance is measured, analyzed, and evaluated.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show monitoring/measurement plan, filled records, and summaries/results for the last quarter."
                 )
             }
@@ -3097,7 +3097,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Procedure for evaluation and management of compliance obligations.",
                 "Document Owner": "Compliance Officer",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide compliance monitoring records, audits, or status reports showing periodic review."
                 )
             }
@@ -3109,8 +3109,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes how legal and other requirements are identified and complied with.",
                 "Document Owner": "Compliance Officer",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Show a recent update or review record for legal requirements, with one example of a regulatory change tracked and addressed."
+                "Stage 2 Prompt": (
+                    "Show a recent update or review record for legal requirements based on the address and scope of the company, with one example of a regulatory change tracked and addressed."
                 )
             },
             {
@@ -3119,7 +3119,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Up-to-date register of all relevant legal requirements.",
                 "Document Owner": "Compliance Officer",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a copy of the legal register and highlight the learning/action taken on a new requirement in the last 6 months."
                 )
             }
@@ -3131,7 +3131,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Record and analysis/results of monitored data for continual improvement.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a sample analysis record and explain the actions decided based on this data analysis."
                 )
             }
@@ -3143,7 +3143,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes how internal audits are planned, conducted, and followed up.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the last two internal audit reports, including audit program and corrections for non-conformities identified."
                 )
             },
@@ -3153,7 +3153,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Schedule/calendar of planned internal audits.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current annual audit program including areas covered and assigned auditors."
                 )
             },
@@ -3163,7 +3163,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Detailed audit timetable and auditor assignments.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the detailed schedule and confirmation/audit notifications sent."
                 )
             },
@@ -3173,7 +3173,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Completed report with findings, recommendations, and corrective action.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a recent audit report, and summarize 2-3 nonconformities found, including their closure status and responsible persons."
                 )
             }
@@ -3185,7 +3185,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines the management review process and requirements.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show management review schedule, agenda, and minutes for the most recent meeting, including actions and persons responsible."
                 )
             },
@@ -3195,7 +3195,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Signed minutes from management review meetings.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the last approved minutes and highlight key outputs, decisions, and assigned actions."
                 )
             }
@@ -3207,7 +3207,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Details how non-conformities are corrected and actions tracked.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide evidence of at least two corrective actions still in progress, along with their status, owner, and planned closure date."
                 )
             },
@@ -3217,7 +3217,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Register/log showing status of all non-conformities and corrective actions.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show registry with status updates and details for at least two nonconformities (open and closed)."
                 )
             },
@@ -3227,7 +3227,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Detailed report evidencing closure and verification for each nonconformity.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a sample nonconformity closure report, including root cause, corrections, actions, and verification."
                 )
             }
@@ -3239,7 +3239,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Signed minutes, including continual improvement review and actions.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show evidence that continual improvement is reviewed and driven through management review (e.g., improvement actions and tracking)."
                 )
             },
@@ -3249,8 +3249,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Evidence that continual improvement is achieved through corrective actions.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Submit an example where a nonconformity or suggestion led to a documented improvement of the management system or process."
+                "Stage 2 Prompt": (
+                    "Submit an example where a nonconformity or suggestion led to a documented improvement of the management system or process. Mention a product or sample."
                 )
             }
         ]
@@ -3265,8 +3265,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes the organization's integrated management system and its context.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Describe in detail the organization’s name, nature of business, core activities, industry sector, and the names/designations of its top management from the attendance sheet, in a formal ISO audit style."
+                "Stage 2 Prompt": (
+                    "Describe in detail about company activities, top management name"
                 )
             },
             {
@@ -3275,7 +3275,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Identifies strengths, weaknesses, opportunities, and threats.",
                 "Document Owner": "Process Owner",
                 "Approved By": "Top Management",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a completed SWOT analysis form and describe how results influence actions, with a concrete example of a weakness or opportunity addressed."
                 )
             },
@@ -3285,7 +3285,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines external and internal issues relevant to organizational purpose and QMS.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the documented issues and explain, with examples, where any of these have prompted operational or policy changes."
                 )
             },
@@ -3297,8 +3297,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Process for identifying interested parties and their relevant needs and expectations.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Describe and show evidence that the organization has identified all relevant interested parties and determined their needs and expectations. List at least 4-5 actual interested parties (e.g., customers, regulators, staff, suppliers, contractors) and specific expectations for each. Show how this information is integrated into your management system."
+                "Stage 2 Prompt": (
+                    "Describe and show evidence that the organization has identified all relevant interested parties and determined their needs and expectations. List at least 4-5 actual interested parties (e.g., customers, regulators, staff, suppliers, contractors) and specific expectations for each. Show how this information according to the scope and address of the company."
                 )
             },
             {
@@ -3307,7 +3307,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Lists internal and external interested parties with their needs.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current interested parties list, and for 4-5 entries, show evidence that their expectations are tracked and acted on, such as communications, meeting minutes, or actions taken."
                 )
             }
@@ -3319,8 +3319,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines the boundaries and applicability of the management system.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Provide the documented scope and give real examples showing what is included and excluded; e.g., reference specific departments, locations, or processes."
+                "Stage 2 Prompt": (
+                    "Provide the documented scope and also create a evidence(like purchase order, invoice or contract) to justify the scope."
                 )
             }
         ],
@@ -3331,7 +3331,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "A diagram showing process interactions and interfaces.",
                 "Document Owner": "Process Owner",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the process map/chart and explain with evidence (e.g., training records, cross-functional meetings) how these interactions are communicated and implemented."
                 )
             },
@@ -3341,7 +3341,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Comprehensive inventory of all active management system procedures.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current version of the procedures list and a tracked change showing a recent update or addition."
                 )
             }
@@ -3353,8 +3353,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes top management’s leadership approach in the QMS.",
                 "Document Owner": "Managing Director",
                 "Approved By": "Board",
-                "Stage 1 Prompt": (
-                    "Give examples of leadership in action (e.g., signed policies, management review participation, communication records) showing how top management demonstrates commitment and also mention the names of person in top management using the attendance sheet that he/she is commited for conformance of the management system"
+                "Stage 2 Prompt": (
+                    "Give examples of leadership in action (e.g., signed policies, management review participation, communication records) showing how top management demonstrates commitment and also mention the name of person in top management using the attendance sheet."
                 )
             },
             {
@@ -3363,8 +3363,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Policy for customer focus, satisfaction, and requirements.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Provide evidence (customer feedback reviews, complaint logs, actions taken) that customer focus is implemented and monitored throught the policy."
+                "Stage 2 Prompt": (
+                    "Provide evidence (customer feedback reviews, complaint logs, actions taken) that customer focus is implemented and monitored through websites, emails, display at reception."
                 )
             },
         ],
@@ -3375,7 +3375,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Signed and communicated QHSE policy document.",
                 "Document Owner": "Managing Director",
                 "Approved By": "Board",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current signed QHSE policy; show evidence of how it is communicated and understood at relevant functions and levels."
                 )
             }
@@ -3387,8 +3387,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines functional roles, responsibilities, authorities.",
                 "Document Owner": "HR Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Provide responsibility matrix or job descriptions and show evidence they are followed (e.g. signed documents, role-based process assignments). Also mention a name to justify this using a name from attendance sheet."
+                "Stage 2 Prompt": (
+                    "Provide responsibility matrix or job descriptions and show evidence they are followed (e.g. signed documents, role-based process assignments). Also, mention a employee from the attendance sheet."
                 )
             }
         ],
@@ -3399,8 +3399,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Process for involving employees in decisions affecting QHSE.",
                 "Document Owner": "HR Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Present meeting minutes, suggestion system outputs, or other records showing worker involvement in QMS/EMS/OHSMS activities."
+                "Stage 2 Prompt": (
+                    "Present meeting minutes, suggestion system outputs, or other records showing worker involvement in OHSMS activities. Mention a name from the attendance sheet."
                 )
             }
         ],
@@ -3411,8 +3411,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Documents risk and opportunity assessment and handling.",
                 "Document Owner": "Risk Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Show risk register(s) and evidence that risks/opportunities are regularly identified, assessed, and acted on (e.g., risk reviews, controls implemented). Also, mention 4-5 risks according to the scope of the company and their mitigation plan."
+                "Stage 2 Prompt": (
+                    "Show risk register(s) and evidence that risks/opportunities are regularly identified, assessed, and acted on (e.g., risk reviews, controls implemented). Mention 4-5 risks according to the scope and their mitigation plan."
                 )
             },
             {
@@ -3421,7 +3421,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Record of identified risks and opportunities.",
                 "Document Owner": "Risk Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current registry and examples of actions taken on identified risks/opportunities."
                 )
             },
@@ -3433,8 +3433,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "How to identify and manage environmental aspects and impacts.",
                 "Document Owner": "EHS Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Provide a completed impact assessment, and show how significant impacts are managed in your daily/operational practices. Also, mention two environmental aspect according to the scope."
+                "Stage 2 Prompt": (
+                    "Provide a completed impact assessment, and show how significant impacts are managed in your daily/operational practices. Mention any 4 enviornmental aspect based on the scope, and elaborate the assessment methodology."
                 )
             },
             {
@@ -3443,8 +3443,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Process for hazard identification and risk evaluation.",
                 "Document Owner": "Safety Officer",
                 "Approved By": "EHS Manager",
-                "Stage 1 Prompt": (
-                    "Show a record of identified hazards and evidence of implemented controls or corrective actions. Also, write any 2 hazards based on the scope of company."
+                "Stage 2 Prompt": (
+                    "Show a record of identified hazards and evidence of implemented controls or corrective actions. Mention any 4 hazards based on the scope and elaborate the assessment methodology."
                 )
             },
             {
@@ -3453,7 +3453,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Filled record of aspects and impact analyses.",
                 "Document Owner": "EHS Manager",
                 "Approved By": "Top Management",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the current filled record and evidence that it's regularly reviewed and updated."
                 )
             },
@@ -3463,7 +3463,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Actual hazard analysis and risk treatment records.",
                 "Document Owner": "Safety Officer",
                 "Approved By": "EHS Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Present completed forms with evidence of actions taken as a result (e.g. mitigation implemented)."
                 )
             }
@@ -3475,8 +3475,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Process to identify, access and comply with legal/other requirements.",
                 "Document Owner": "Compliance Officer",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Show the process for legal requirement identification, and current legal register. Mention legal requirement according to the country and scope of the company."
+                "Stage 2 Prompt": (
+                    "Show the process for legal requirement identification, and current legal register. Give an example of recent new/changed requirement tracked and acted on. Also mention the legal requirement based on the country and scope of the company."
                 )
             },
             {
@@ -3485,7 +3485,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Register of legal/other compliance requirements.",
                 "Document Owner": "Compliance Officer",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide an up-to-date legal register and show evidence of ongoing review/updates."
                 )
             }
@@ -3497,8 +3497,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "How to identify and manage environmental aspects and impacts.",
                 "Document Owner": "EHS Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Provide a completed impact assessment, and show how significant impacts are managed in your daily/operational practices. Also, mention two environmental aspect according to the scope."
+                "Stage 2 Prompt": (
+                    "Provide a completed impact assessment, and show how significant impacts are managed in your daily/operational practices. Mention any 4 enviornmental aspect based on the scope, and elaborate the assessment methodology."
                 )
             },
             {
@@ -3507,8 +3507,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Process for hazard identification and risk evaluation.",
                 "Document Owner": "Safety Officer",
                 "Approved By": "EHS Manager",
-                "Stage 1 Prompt": (
-                    "Show a record of identified hazards and evidence of implemented controls or corrective actions. Also, write any 2 hazards based on the scope of company."
+                "Stage 2 Prompt": (
+                    "Show a record of identified hazards and evidence of implemented controls or corrective actions. Mention any 4 hazards based on the scope and elaborate the assessment methodology."
                 )
             },
             {
@@ -3517,7 +3517,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Filled record of aspects and impact analyses.",
                 "Document Owner": "EHS Manager",
                 "Approved By": "Top Management",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the current filled record and evidence that it's regularly reviewed and updated."
                 )
             },
@@ -3527,7 +3527,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Actual hazard analysis and risk treatment records.",
                 "Document Owner": "Safety Officer",
                 "Approved By": "EHS Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Present completed forms with evidence of actions taken as a result (e.g. mitigation implemented)."
                 )
             }
@@ -3539,8 +3539,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Records QHSE objectives, plans, performance indicators.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Provide current QHSE objectives, records of performance vs objectives, and evidence of action when objectives are not achieved. Write atleast 4 objectives according to the scope."
+                "Stage 2 Prompt": (
+                    "Write at least 4 quality, environment, health and safety objectives and write the achieved results so far."
                 )
             },
             {
@@ -3549,7 +3549,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Filled records of objective monitoring/action plans.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Top Management",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show filled action plans and monitoring records, and describe a real corrective action triggered following a missed target."
                 )
             }
@@ -3561,7 +3561,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Inventory of major assets and machinery.",
                 "Document Owner": "Asset Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current asset list and evidence it's maintained and updated regularly; provide an example of how maintenance is scheduled using the list."
                 )
             },
@@ -3571,7 +3571,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Schedules and records for maintenance/calibration.",
                 "Document Owner": "Maintenance Supervisor",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show this year's plan and proof that maintenance and calibration are performed as scheduled (e.g., completed checklists, certificates)."
                 )
             }
@@ -3583,7 +3583,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "How to manage and verify employee competency.",
                 "Document Owner": "HR Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show training and competence procedure and evidence (training records, competence evaluations) that personnel are competent for roles assigned."
                 )
             },
@@ -3593,8 +3593,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Matrix of staff roles, competencies, qualification status.",
                 "Document Owner": "HR Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
-                    "Show the current competence matrix and evidence that gaps are tracked and closed with actual data from the past year. Also, mention a name with the role from the attendance sheet."
+                "Stage 2 Prompt": (
+                    "Show the current competence matrix and evidence that gaps are tracked and closed with actual data from the past year.Mention the name of employee that competency verified from the attendance sheet."
                 )
             },
             {
@@ -3603,8 +3603,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Planned training events for the year.",
                 "Document Owner": "HR Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
-                    "Provide recent annual training plan and proof of completed sessions."
+                "Stage 2 Prompt": (
+                    "Provide recent annual training plan and proof of completed sessions.Mention 2 to 3 training topics to be delivered in year based on the scope."
                 )
             },
             {
@@ -3613,7 +3613,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Evaluation of training effectiveness.",
                 "Document Owner": "Training Coordinator",
                 "Approved By": "HR Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Present completed effectiveness evaluations and corrective actions taken if training outcomes were not met."
                 )
             },
@@ -3623,7 +3623,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Records of all training carried out in the year.",
                 "Document Owner": "HR Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show signed training attendance records and certificates for at least 4 different trainings."
                 )
             },
@@ -3633,8 +3633,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Evaluation records for individual competence.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "HR Manager",
-                "Stage 1 Prompt": (
-                    "Submit actual filled-in evaluation forms and show how incompetence is identified and corrected. Also, mention a name with designation and what training was provided using the names from attendance sheet."
+                "Stage 2 Prompt": (
+                    "Submit actual filled-in evaluation forms and show how incompetence is identified and corrected.Mention a name to justify this from the attendance sheet."
                 )
             }
         ],
@@ -3642,10 +3642,10 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
             {
                 "Document Name": "Integrated Management System Manual",
                 "Document Number": "MAN-01",
-                "Guidance/Description": "Manual describing the organization's OHSMS.",
+                "Guidance/Description": "Manual describing the organization's IMS.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show physical/digital copies of the manual and evidence that staff have access and reference it in work."
                 )
             }
@@ -3657,7 +3657,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Manual includes communication procedures.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Explain how communication requirements from the manual are followed in practice; provide communications sent using the guidance."
                 )
             },
@@ -3667,8 +3667,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "How the organization manages its internal/external communications.",
                 "Document Owner": "Communications Coordinator",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Show an example of actual internal and external communication regarding QMS (e.g. safety alerts, customer letters)."
+                "Stage 2 Prompt": (
+                    "Show an example of actual internal and external communication regarding QMS (e.g. safety alerts, customer letters). Also, list the topics what to communicate, when to communicate, when to communicate."
                 )
             }
         ],
@@ -3679,7 +3679,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Document control process explained.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a controlled document with revision history, and evidence that obsolete versions are removed from use."
                 )
             },
@@ -3689,7 +3689,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "List of all controlled documents.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current master list, mark controlled/uncontrolled copies, and show an example of a document recently added or revised."
                 )
             },
@@ -3699,7 +3699,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Documents controlled that come from outside the organization.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide examples showing external documents tracked and updated—e.g., a regulation update tracked in the system."
                 )
             },
@@ -3709,7 +3709,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Form for requesting changes to documents.",
                 "Document Owner": "All Staff",
                 "Approved By": "Document Control Coordinator",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide one completed change request form and show how requests are logged and tracked."
                 )
             }
@@ -3722,8 +3722,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Document Owner": "",
                 # Not directly specified; usually Operations Manager or Process Owner – fill as per your org chart
                 "Approved By": "",
-                "Stage 1 Prompt": (
-                    "List all core operational procedures maintained under the OHSMS, as per your organization's scope. Show how these procedures are controlled and regularly reviewed."
+                "Stage 2 Prompt": (
+                    "List all core operational procedures maintained under the IMS, as per your organization's scope. Show how these procedures are controlled and regularly reviewed."
                 )
             },
             {
@@ -3732,17 +3732,17 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Change management documentation related to operational processes.",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show completed change management forms reflecting changes in any operational procedure or process over the last year."
                 )
             },
             {
-                "Document Name": "Records of Hazard Analysis and Risk Treatement",
+                "Document Name": "Records of Hazard Analysis and Risk Treatment",
                 "Document Number": "F-10",
                 "Guidance/Description": "Write a prompt about the hazard analysis and risk treatment identified for each operational procedure.",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide filled records of hazard analysis and risk treatment performed for major operational activities. Give an example illustrating how results from these records led to implemented controls."
                 )
             }
@@ -3754,7 +3754,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Write a prompt to list of core operation procedures as per the scope.",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the master list of operational procedures with reference to customer requirements. Provide a sample showing the trace from customer requirements to documented procedures."
                 )
             },
@@ -3764,7 +3764,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Write a prompt that emergency evacuation plan verified and found evident.",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show your current emergency preparedness procedure. Provide evidence (e.g., evacuation drill records) that the plan is tested and known by staff."
                 )
             }
@@ -3776,8 +3776,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Write a prompt that design & development prompt verified (create a sample of any product or service delivered to any client as per the scope).",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
-                    "Show a sample of design & development documentation for a product or service as per your organization’s scope. Include input/output records and version control."
+                "Stage 2 Prompt": (
+                    "Show a sample of design & development documentation for a product or service as per your organization’s scope. Create a sample of any product or service delivered to any client as per the scope and address of the company."
                 )
             },
             {
@@ -3786,8 +3786,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Write a prompt that design review and approval verified (create a sample of any product or service delivered to any client as per the scope).",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
-                    "Provide a completed design review and approval sheet for a recent project, showing signatures/approvals and identified issues. Also, mention a sample of product or service delivered to client as per the scope."
+                "Stage 2 Prompt": (
+                    "Show a sample of design & development documentation for a product or service as per your organization’s scope."
                 )
             },
             {
@@ -3796,8 +3796,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Write a prompt that design process flow verified (create a sample of any product or service delivered to any client as per the scope).",
                 "Document Owner": "",
                 "Approved By": "",
-                "Stage 1 Prompt": (
-                    "Present a filled-in design process flow/progress sheet documenting key stages, milestones, and change management actions for a selected design project.Also, mention a sample of product or service delivered to client as per the scope."
+                "Stage 2 Prompt": (
+                    "Present a filled-in design process flow/progress sheet documenting key stages, milestones, and change management actions for a selected design project. Create a sample of product based on the scope of the company."
                 )
             }
         ],
@@ -3808,7 +3808,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes selection, approval, and evaluation of suppliers.",
                 "Document Owner": "Procurement Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide supplier evaluation records showing at least two vendors evaluated with outcomes. Include criteria used for assessment and ongoing monitoring actions."
                 )
             },
@@ -3818,7 +3818,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines the purchasing process and controls.",
                 "Document Owner": "Procurement Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show sample purchase orders and evidence of implementation of purchasing procedures, including approval and verification steps."
                 )
             },
@@ -3828,7 +3828,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Form used for registering new vendors/subcontractors.",
                 "Document Owner": "Procurement Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a completed registration form for a sample supplier, noting evaluation and approval process."
                 )
             },
@@ -3838,7 +3838,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Current list of all approved suppliers and subcontractors.",
                 "Document Owner": "Procurement Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the list with at least two example suppliers, including approval status and date of last evaluation."
                 )
             },
@@ -3848,7 +3848,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Form evidencing vendor registration and approval.",
                 "Document Owner": "Procurement Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a completed and signed registration form for a vendor from the current year."
                 )
             }
@@ -3860,7 +3860,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes service, production, and contract controls.",
                 "Document Owner": "Operations Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide records (job cards, work instructions, service records) showing controls during product or service provision for a sample client."
                 )
             },
@@ -3870,8 +3870,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Work instructions addressing health, safety, and environment.",
                 "Document Owner": "HSE Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
-                    "Present completed HSE inspection checklists or records, including a recent random safety inspection outcome."
+                "Stage 2 Prompt": (
+                    "Present completed HSE inspection checklists or records, including a recent random safety inspection outcome.Mention a HSE inspection record verified based on the scope."
                 )
             }
         ],
@@ -3882,7 +3882,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines controls for document identification and traceability.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show examples (logs, tags, digital tracking) of how documents or products are identified and traced throughout service or production."
                 )
             },
@@ -3892,7 +3892,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Form to log and authorize changes to production/service.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a completed form for a recent change in production or service, detailing the traceability process."
                 )
             },
@@ -3902,7 +3902,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Master index of all documents for traceability.",
                 "Document Owner": "Document Control Coordinator",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show how the master list supports document traceability, with an annotated example."
                 )
             },
@@ -3912,7 +3912,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Request form for document changes affecting traceability.",
                 "Document Owner": "All Staff",
                 "Approved By": "Document Control Coordinator",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a sample of this form including traceability notes and resolution for one recent request."
                 )
             }
@@ -3924,7 +3924,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Log of customer or external provider property received.",
                 "Document Owner": "Warehouse Supervisor",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a filled form evidencing the receipt and safeguarding of property from a customer or supplier."
                 )
             }
@@ -3936,7 +3936,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes measures for preservation of product through production/service lifecycle.",
                 "Document Owner": "Operations Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Explain methods for preserving product/service conformity (packaging, storage, labeling), and give an example from a recent job."
                 )
             }
@@ -3948,7 +3948,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Reports on customer feedback and post-delivery activities.",
                 "Document Owner": "Customer Service Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a recent customer feedback report, delivery note, or post-delivery survey analysis with a completed action."
                 )
             }
@@ -3960,7 +3960,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes the process for managing changes affecting product/service.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a sample record of a product/service change from initial request to implementation for one project/client."
                 )
             },
@@ -3970,7 +3970,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Form for logging changes as part of the change management process.",
                 "Document Owner": "All Staff",
                 "Approved By": "Document Control Coordinator",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a completed change request relating to a service/product delivered, including status and approvals."
                 )
             }
@@ -3982,7 +3982,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Final inspection record for product/service before release.",
                 "Document Owner": "Quality Inspector",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show at least one signed final inspection report for a product or service delivered to a client relevant to your scope."
                 )
             }
@@ -3994,8 +3994,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Procedure to identify, control, and correct nonconforming outputs.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
-                    "Provide records/log for 2-3 nonconforming outputs, including actions taken and follow-up verification."
+                "Stage 2 Prompt": (
+                    "Provide records/log for 2-3 nonconforming outputs, including actions taken and follow-up verification based on the scope of the company."
                 )
             },
             {
@@ -4004,7 +4004,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Log/register of nonconformities, corrections, and status.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Operations Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the registry for the last year with two sample entries, their closure or current status, including evidence for action."
                 )
             }
@@ -4013,10 +4013,10 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
             {
                 "Document Name": "Procedure for Monitoring & Measurement",
                 "Document Number": "P-17",
-                "Guidance/Description": "Defines how OHSMS performance is measured, analyzed, and evaluated.",
+                "Guidance/Description": "Defines how IMS performance is measured, analyzed, and evaluated.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show monitoring/measurement plan, filled records, and summaries/results for the last quarter."
                 )
             }
@@ -4028,7 +4028,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Procedure for evaluation and management of compliance obligations.",
                 "Document Owner": "Compliance Officer",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide compliance monitoring records, audits, or status reports showing periodic review."
                 )
             }
@@ -4040,8 +4040,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes how legal and other requirements are identified and complied with.",
                 "Document Owner": "Compliance Officer",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Show a recent update or review record for legal requirements, with one example of a regulatory change tracked and addressed."
+                "Stage 2 Prompt": (
+                    "Show a recent update or review record for legal requirements based on the address and scope of the company, with one example of a regulatory change tracked and addressed."
                 )
             },
             {
@@ -4050,7 +4050,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Up-to-date register of all relevant legal requirements.",
                 "Document Owner": "Compliance Officer",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a copy of the legal register and highlight the learning/action taken on a new requirement in the last 6 months."
                 )
             }
@@ -4062,7 +4062,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Record and analysis/results of monitored data for continual improvement.",
                 "Document Owner": "Quality Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show a sample analysis record and explain the actions decided based on this data analysis."
                 )
             }
@@ -4074,7 +4074,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Describes how internal audits are planned, conducted, and followed up.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the last two internal audit reports, including audit program and corrections for non-conformities identified."
                 )
             },
@@ -4084,7 +4084,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Schedule/calendar of planned internal audits.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the current annual audit program including areas covered and assigned auditors."
                 )
             },
@@ -4094,7 +4094,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Detailed audit timetable and auditor assignments.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show the detailed schedule and confirmation/audit notifications sent."
                 )
             },
@@ -4104,7 +4104,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Completed report with findings, recommendations, and corrective action.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Quality Manager",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a recent audit report, and summarize 2-3 nonconformities found, including their closure status and responsible persons."
                 )
             }
@@ -4116,7 +4116,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Defines the management review process and requirements.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show management review schedule, agenda, and minutes for the most recent meeting, including actions and persons responsible."
                 )
             },
@@ -4126,7 +4126,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Signed minutes from management review meetings.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide the last approved minutes and highlight key outputs, decisions, and assigned actions."
                 )
             }
@@ -4138,7 +4138,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Details how non-conformities are corrected and actions tracked.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide evidence of at least two corrective actions still in progress, along with their status, owner, and planned closure date."
                 )
             },
@@ -4148,7 +4148,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Register/log showing status of all non-conformities and corrective actions.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show registry with status updates and details for at least two nonconformities (open and closed)."
                 )
             },
@@ -4158,7 +4158,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Detailed report evidencing closure and verification for each nonconformity.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Provide a sample nonconformity closure report, including root cause, corrections, actions, and verification."
                 )
             }
@@ -4170,7 +4170,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Signed minutes, including continual improvement review and actions.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
+                "Stage 2 Prompt": (
                     "Show evidence that continual improvement is reviewed and driven through management review (e.g., improvement actions and tracking)."
                 )
             },
@@ -4180,8 +4180,8 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
                 "Guidance/Description": "Evidence that continual improvement is achieved through corrective actions.",
                 "Document Owner": "QHSE Manager",
                 "Approved By": "Managing Director",
-                "Stage 1 Prompt": (
-                    "Submit an example where a nonconformity or suggestion led to a documented improvement of the management system or process."
+                "Stage 2 Prompt": (
+                    "Submit an example where a nonconformity or suggestion led to a documented improvement of the management system or process. Mention a product or sample."
                 )
             }
         ]
@@ -4204,10 +4204,9 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
     else:
         pattern_name, pattern_desc, clause_map = random.choice(patterns)
 
-
     # Generate full markdown table including all columns
     lines = [
-        "| Clause | Document Name | Document Number | Document Date | Guidance/Description | Document Owner | Approved By | Stage 1 Prompt |",
+        "| Clause | Document Name | Document Number | Document Date | Guidance/Description | Document Owner | Approved By | Stage 2 Prompt |",
         "|--------|---------------|----------------|--------------|----------------------|---------------|-------------|----------------|"
     ]
     for clause, docs in clause_map.items():
@@ -4217,7 +4216,7 @@ def choose_document_pattern_stage1(forced_pattern_name=None, date_map=None):
             lines.append(
                 f"| {clause} | {doc['Document Name']} | {doc['Document Number']} | {fixed_date} | "
                 f"{doc.get('Guidance/Description', '')} | {doc.get('Document Owner', '')} | "
-                f"{doc.get('Approved By', '')} | {doc.get('Stage 1 Prompt', '')} |"
+                f"{doc.get('Approved By', '')} | {doc.get('Stage 2 Prompt', '')} |"
             )
     prompt_table = "\n".join(lines)
 
@@ -4231,95 +4230,100 @@ def org_initials(org_name: str) -> str:
     return "".join([w[0].upper() for w in org_name.split() if w and w[0].isalpha()])
 
 def generate_prompt_for_stage1(batch, audit, clause_map, prompt_table_md, pattern_desc):
-    # Collect clause-specific prompts, if you use them (ISO 45001 OHSMS blend)
-    stage1_prompts = []
+    # Collect clause-specific prompts if you use them (customize per your clause_map)
+    stage2_prompts = []
     for clause, docs in clause_map.items():
         for doc in docs:
-            if "Stage 1 Prompt" in doc and doc["Stage 1 Prompt"]:
-                stage1_prompts.append(f"Clause {clause}: {doc['Stage 1 Prompt']}")
-    stage1_prompt_text = "\n".join(stage1_prompts)
+            if "Stage 2 Prompt" in doc and doc["Stage 2 Prompt"]:
+                stage2_prompts.append(f"Clause {clause}: {doc['Stage 2 Prompt']}")
+    stage2_prompt_text = "\n".join(stage2_prompts)
 
     attendance_list_text = "\n".join([f"- {member}" for member in audit.attendanceSheet])
 
-    # IMS_org style instructions only if pattern_desc matches IMS_org
+    # Extra IMS_org instructions (only if pattern_desc matches IMS_org style)
     ims_org_instructions = ""
     if "Org initials + OHSMS (XXX-OHSMS-...)" in pattern_desc:
         ims_org_instructions = """
-- If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-OHSMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report. Only do this when document pattern starts with XXX. Do not do this if it is just F-X or P-X.
-- Do not modify the document number or details randomly.
-- For example, if the organization's name is "Eco Solutions Pvt Ltd", then you must use "ESPL-OHSMS-F-01" instead of "XXX-OHSMS-F-01".
-- This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.
-"""
+     Apply the below pattern only and only if the document number starts with XXX do the below thing
+    - If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-OHSMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report. Only do this when document pattern starts with XXX. Do not do this if it’s just F-X or P-X.
+    - Do not modify the document number or details randomly.
+    - For example, if the organization's name is "Eco Solutions Pvt Ltd", then you must use "ESPL-OHSMS-F-01" instead of "XXX-OHSMS-F-01".
+    - This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.-
+    """
 
     return f"""
-You are an audit reporting assistant for an ISO 45001:2018 Stage 1 Occupational Health & Safety Management System (OH&SMS) audit.
+    You are an ISO 45001:2018 Occupational Health & Safety Management System (OH&SMS) Stage 2 audit reporting assistant.
 
-Use the following document numbering format throughout the report:  
-Pattern: {pattern_desc}  
-When mentioning any document as evidence, you MUST always use its name and number and date from the table below.  
-{ims_org_instructions}
-- Dont mention again and again that the following document is according to ISO:45001 clause requirement.
-- Add dates for each document from the prompt table.
----
+    Use the following document numbering format throughout all evidence:
+    **Pattern**: {pattern_desc}
+    {ims_org_instructions}
 
-### Audit Details:
-- Organization: {audit.organizationName}
-- OHSMS Scope: {audit.scope}
-- Address: {audit.address}
-- Audit Dates: {audit.startDateOfAuditStage1} to {audit.endDateOfAuditStage1}
+    {prompt_table_md}
 
-### Attendance Sheet:
-List of personnel in attendance. Use these names accurately while writing evidence, assigning realistic roles relevant to OHSMS (e.g., CEO, OHSMS Manager, QMS/EMS/OHS/Compliance Officer, etc.):
-{attendance_list_text}
+    ---
 
----
-STRICT and REDUNDANT RULES (do NOT break them):
-- Use the document date for each document as mentioned in the prompt table. Dont generate them randomly.
-- Format every answer strictly as paragraphs one paragraph for each distinct answer or point. If the content contains any markdown and tables rewrite them into plain paragraph form while preserving all details and meaning. No table, markdown, or code formatting are allowed in the output.
-- For each clause, ONLY mention as evidence the exact documents and document numbers provided in the input for that clause.
-- If a clause/question has NO documents given in the input, DO NOT invent, imply, or introduce ANY document forms, names, or numbers—leave out any document mention in your answer for that clause.
-- Under NO circumstances should you add, paraphrase, or generate document names/numbers beyond what is provided for that clause.
-- Do NOT attempt to complete or create document numbers based on the pattern. ONLY use the exact document number provided. If a number is not listed, do not use one.
-- If you see a general description with NO specific documents, simply generate evidence without referring to any document at all.
+    ### ABSOLUTE FORMATTING RULES (PLAIN TEXT ONLY – STRICT):
+    - The output must be in strict plain text — no markdown, no bold (**), italics (*), underscores (_), bullet symbols from markdown (- or * as formatting), tables, headings, or any other non-standard formatting.
+    - Do not generate any special characters used for styling in markdown (such as *, _, `, >, |, ~, #, [], ()).
+    - Write all content in normal sentences using only letters, numerals, and standard punctuation.
+    - Document names and numbers must be written exactly as provided, without surrounding symbols or formatting.
+    - For spacing, only use actual line breaks; no markdown or decorative spacing.
+    - Even if the input contains markdown or symbols, remove them in the output — ensure the output is fully cleaned.
+    - Any output that contains forbidden formatting is invalid.
 
-### Instructions for Report Writing:
-- For each clause, the answer must be concise and limited to approximately 80 to 100 words, including only the necessary information relevant to the clause and documents.
-- You are to ONLY update the 'Document Verification detail with statement of Conformity' field of each item in the input list.
-- DO NOT change or remove any keys like 'Cl. No', 'Description', or 'C/NC/O'.
-- If the "C/NC/O" value is "C", write the evidence as a professional, positive confirmation that OHSMS requirements for this clause are met, referencing ONLY the document(s) listed for that clause. Avoid repeatedly stating generic phrases such as "the clause meets requirements" or "this clause is compliant"; show this through the presented evidence instead.
-- If "C/NC/O" is "NC", document a specific nonconformity—clearly stating what is not conforming, referencing ONLY the relevant clause and document(s) listed for that clause.
-- If "C/NC/O" is "O", rephrase neutrally as an observation, referencing ONLY the clause and relevant document(s) listed for that clause.
-- For each clause, reference strictly and exclusively the exact documents from the chosen `choose_document_pattern_*` output for that clause. Do NOT include or invent any document numbers, names, or forms not present in the mapping for that clause.
-- Maintain the input order; do not reformat or change any field except 'Document Verification detail with statement of Conformity'.
-- For entries where the 'Description' field includes multiple questions, provide a detailed, structured answer addressing each question in order.
-- Insert a blank line between each clause's answer for clarity (two newlines between answers).
-- Responses should align with best practices for ISO 45001 Stage 1 OHSMS audits, referencing roles and documents naturally.
-- If 'C/NC/O' or 'Document Verification...' is 'NA', do not fill in or modify the field.
+    **STRICT and REDUNDANT RULES (do NOT break them):**
+    - Use the document date for each document as mentioned in the prompt table. Dont generate them randomly.
+    - For each clause, ONLY list as evidence the exact documents and their numbers provided for that clause in the input.
+    - If a clause has NO listed documents, do NOT mention, imply, or invent *any* document in the answer for that clause.
+    - NEVER create, paraphrase, infer, or generate document names or numbers based on the pattern or clause context.
+    - Do NOT combine, split, or otherwise modify listed document names/numbers.
+    - **In summary:** ONLY reference documents exactly as listed. DO NOT reference documents for a clause if none are provided.
+    - Use the document date for each document as mentioned in the prompt table. Dont generate them randomly.
+    - Format every answer strictly as paragraphs one paragraph for each distinct answer or point. If the content contains any markdown and tables rewrite them into plain paragraph form while preserving all details and meaning. No table, markdown, or code formatting are allowed in the output.
 
+    ### Audit Details:
+    - Organization: {audit.organizationName}
+    - OH&SMS Scope: {audit.scope}
+    - Address: {audit.address}
+    - Stage 2 Audit Dates: {audit.startDateOfAuditStage2} to {audit.endDateOfAuditStage2}
+    - Stage 1 Audit Dates: {audit.startDateOfAuditStage1} to {audit.endDateOfAuditStage1}
 
-### ABSOLUTE FORMATTING RULES (PLAIN TEXT ONLY – STRICT):
-- The output must be in strict plain text — no markdown, no bold (**), italics (*), underscores (_), bullet symbols from markdown (- or * as formatting), tables, headings, or any other non-standard formatting.
-- Do not generate any special characters used for styling in markdown (such as *, _, `, >, |, ~, #, [], ()).
-- Write all content in normal sentences using only letters, numerals, and standard punctuation.
-- Document names and numbers must be written exactly as provided, without surrounding symbols or formatting.
-- For spacing, only use actual line breaks; no markdown or decorative spacing.
-- Even if the input contains markdown or symbols, remove them in the output — ensure the output is fully cleaned.
-- Any output that contains forbidden formatting is invalid.
+    ### Attendance Sheet:
+    Below is the list of personnel present during the audit. Use these names accurately when drafting evidence. Assign relevant titles/roles (e.g., CEO, OHS Manager, Safety Officer, EHS Coordinator, etc.) from this list.
 
----
+    {attendance_list_text}
 
-### Input:
-Here is the list of clause findings. Again, do NOT change the structure—only generate appropriate 'Document Verification detail with statement of Conformity' content.
+    ---
 
-{json.dumps(batch, indent=2, ensure_ascii=False)}
+    ### Instructions for ISO 45001:2018 Stage 2 OH&SMS Report Writing:
+    - For each clause, the answer must be concise and limited to approximately 80 to 100 words, including only the necessary information relevant to the clause and documents.
+    - Only update the 'evidence' field of each input item.
+    - Do NOT alter or remove any other fields (e.g., 'Cl. No', 'Description', 'C/NC/O').
+    - For 'C' (Conformity): Rephrase the "evidence" as a factual, positive confirmation that requirements of ISO 45001:2018 for that clause are met, referencing only the clause(s) (e.g., 4.3, 7.2) and any relevant listed document(s).
+    - For 'NC' (Nonconformity): Clearly state what does not conform to ISO 45001:2018, referencing only listed clause(s) and document(s).
+    - For 'O' (Observation): Reword the evidence as a neutral, factual observation, referencing only the listed clause(s) and document(s).
+    - If the 'Description' field includes multiple questions, write a comprehensive, structured response that clearly addresses **each question in order**.
+    - STRICTLY follow the order of batch items; do NOT change structure or order—modify 'evidence' only.
+    - If a clause has any document(s) referenced, use ONLY their names/numbers as provided, and date your evidence with a random date 7-10 months prior to the Stage 1 audit.
+    - Do NOT add, merge, or invent document references under any circumstances. Omit document references if none are listed.
+    - Use specific names and roles from the attendance list in your responses as appropriate.
+    - Responses must align with ISO 45001:2018 Stage 2 OH&SMS audit standards wherever the clause applies.
+    - Ensure every answer is separated by a blank line (two newlines) for clarity.
+    - Output must be only the list of dictionaries, updated as per these rules.
+    ---
 
----
+    ### Input:
+    Here is the list of clauses and requirements. Do NOT change structure—edit only the 'evidence' field.
 
-### Output:
-Respond ONLY with the list of dictionaries, with updated 'Document Verification detail with statement of Conformity' fields.  
-Do not add commentary or explanations.  
-Ensure each clause's answer is separated by one blank line.
-"""
+    {json.dumps(batch, indent=2, ensure_ascii=False)}
+
+    ---
+
+    ### Output:
+    Respond with ONLY the list of dictionaries, with revised 'evidence' fields.
+    Do NOT add markdown, comments, or extra text.
+    Separate each answer by a single blank line (\\n\\n) for readability.
+    """
 
 
 
