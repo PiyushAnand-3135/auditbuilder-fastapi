@@ -23,6 +23,10 @@ router = APIRouter()
 stage1_minor_nc_store = []
 stage1_observation_store = []
 
+def org_initials(org_name: str) -> str:
+    # E.g., "Livpure Limited" → "LL"
+    return "".join([w[0].upper() for w in org_name.split() if w and w[0].isalpha()])
+
 def remove_markdown_styling(text: str) -> str:
     """
     Removes markdown bold/italic markers (*, **) without altering other text.
@@ -371,15 +375,18 @@ def generate_prompt_for_stage2(batch, audit, clause_map, prompt_table_md, patter
     attendance_list_text = "\n".join([f"- {member}" for member in audit.attendanceSheet])
 
     # Extra IMS_org instructions (only if pattern_desc matches IMS_org style)
+    # Extra IMS_org instructions (only if pattern_desc matches IMS_org style)
     ims_org_instructions = ""
     if "Org initials + QMS (XXX-QMS-...)" in pattern_desc:
-        ims_org_instructions = """
- Apply the below pattern only and only if the document number starts with XXX do the below thing
-- If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-QMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report. Only do this when document pattern starts with XXX. Do not do this if it’s just F-X or P-X.
-- Do not modify the document number or details randomly.
-- For example, if the organization's name is "Eco Solutions Pvt Ltd", then you must use "ESPL-QMS-F-01" instead of "XXX-QMS-F-01".
-- This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.-
-"""
+        org_initials_text = org_initials(audit.organizationName)
+        ims_org_instructions = f"""
+    Apply the below pattern only and only if the document number starts with XXX do the below thing
+    - If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-QMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report. Only do this when document pattern starts with XXX. Do not do this if it’s just F-X or P-X.
+    - Do not modify the document number or details randomly.
+    - For example, if the organization's name is "{audit.organizationName}", then you must use "{org_initials_text}-QMS-F-01" instead of "XXX-QMS-F-01".
+    - The correct initials to use for this organization are: {org_initials_text}.
+    - This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.
+    """
 
     # Then use prompt_table_md (the markdown string) for embedding in prompt
     return f"""
@@ -8481,14 +8488,15 @@ def generate_prompt_for_stage1(batch, audit, clause_map, prompt_table_md, patter
     # Extra IMS_org instructions (only if pattern_desc matches IMS_org style)
     ims_org_instructions = ""
     if "Org initials + QMS (XXX-QMS-...)" in pattern_desc:
+        org_initials_text = org_initials(audit.organizationName)
         ims_org_instructions = f"""
-Apply the below pattern only and only if the document number starts with XXX do the below thing
-- If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-QMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report. Only do this when document pattern starts with XXX. Do not do this if it’s just F-X or P-X.
-- Do not modify the document number or details randomly.
-- For example, if the organization's name is "Eco Solutions Pvt Ltd", then you must use "ESPL-QMS-F-01" instead of "XXX-QMS-F-01".
-- The correct initials to use for this organization are: {audit.organizationName}.
-- This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.
-"""
+    Apply the below pattern only and only if the document number starts with XXX do the below thing
+    - If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-QMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report. Only do this when document pattern starts with XXX. Do not do this if it’s just F-X or P-X.
+    - Do not modify the document number or details randomly.
+    - For example, if the organization's name is "{audit.organizationName}", then you must use "{org_initials_text}-QMS-F-01" instead of "XXX-QMS-F-01".
+    - The correct initials to use for this organization are: {org_initials_text}.
+    - This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.
+    """
 
     return f"""
 You are an audit reporting assistant for an **ISO 9001:2015 Stage 1 Quality Management System (QMS)** audit.
