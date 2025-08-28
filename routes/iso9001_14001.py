@@ -8662,6 +8662,7 @@ def update_cnc_placeholders_stage1(rows):
 def patch_docx_by_row_index_stage1(docx_buffer, audit_rows, table_idx=None, data_start_idx=1, return_table_idx=False):
     """
     Robustly patches an ISO 9001/14001/45001 Stage 1 audit clause table in a DOCX file (4-column).
+    Deletes existing data rows and recreates them cleanly to avoid Word merging issues.
     """
     from docx import Document
     docx_buffer.seek(0)
@@ -8697,42 +8698,40 @@ def patch_docx_by_row_index_stage1(docx_buffer, audit_rows, table_idx=None, data
     if not table_found:
         raise ValueError("Could not find Stage-1 clause table in DOCX.")
 
-    # 2. Normalise audit_rows keys
+    # 2. Normalize audit_rows keys
     norm_rows = []
     for r in audit_rows:
         nr = {}
         for col_key in col_keywords.keys():
+            # match ignoring case
+            found = False
             for k, v in r.items():
                 if k.strip().lower() == col_key.strip().lower():
                     nr[col_key] = v
+                    found = True
                     break
-            nr.setdefault(col_key, "")  # Ensure all keys present
+            if not found:
+                nr[col_key] = ""
         norm_rows.append(nr)
 
-    # 3. Patch rows in order
-    audit_idx = 0
-    for trow in table_found.rows[header_row_idx + 1:]:
-        if audit_idx >= len(norm_rows):
-            break
-        if all(col_map[key] < len(trow.cells) for key in col_map):
-            cl_no_text = trow.cells[col_map["Cl. No"]].text.strip()
-            if cl_no_text or any(trow.cells[col_map[k]].text.strip() for k in col_map):
-                for key in col_map:
-                    val = str(norm_rows[audit_idx].get(key, "")).replace("{{clause}}", "")
-                    trow.cells[col_map[key]].text = val
-                audit_idx += 1
+    # 3. Remove all rows after header
+    while len(table_found.rows) > header_row_idx + 1:
+        tbl = table_found._tbl
+        tbl.remove(tbl.tr_lst[-1])
 
-    # 4. Cleanup stray placeholders
+    # 4. Add one row per audit row
+    for nr in norm_rows:
+        new_row = table_found.add_row()
+        for col_key, col_idx in col_map.items():
+            if col_idx < len(new_row.cells):
+                val = str(nr.get(col_key, "")).replace("{{clause}}", "")
+                new_row.cells[col_idx].text = val
+
+    # 5. Cleanup placeholders
     for row in table_found.rows:
         for cell in row.cells:
             if "{{clause}}" in cell.text:
                 cell.text = cell.text.replace("{{clause}}", "")
-
-    # 5. Warnings
-    if audit_idx < len(norm_rows):
-        print(f"⚠️ Warning: Not all audit_rows were patched ({audit_idx} of {len(norm_rows)})")
-    elif audit_idx > len(norm_rows):
-        print(f"⚠️ Warning: More table lines than data rows ({audit_idx} > {len(norm_rows)})")
 
     # 6. Save back
     docx_buffer.seek(0)

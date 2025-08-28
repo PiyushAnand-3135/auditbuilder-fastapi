@@ -4256,11 +4256,10 @@ You are an audit reporting assistant for an ISO 45001:2018 Stage 1 Occupational 
 
 Use the following document numbering format throughout the report:  
 Pattern: {pattern_desc}  
-When mentioning any document as evidence, you MUST always use its name and number from the table below.  
+When mentioning any document as evidence, you MUST always use its name and number and date from the table below.  
 {ims_org_instructions}
 - Dont mention again and again that the following document is according to ISO:45001 clause requirement.
 - Add dates for each document from the prompt table.
-
 ---
 
 ### Audit Details:
@@ -8463,7 +8462,6 @@ Below is the list of personnel present during the audit. Use these names accurat
 - Responses must align with ISO 45001:2018 Stage 2 OH&SMS audit standards wherever the clause applies.
 - Ensure every answer is separated by a blank line (two newlines) for clarity.
 - Output must be only the list of dictionaries, updated as per these rules.
-
 ---
 
 ### Input:
@@ -9244,6 +9242,9 @@ async def submit_iso45001_stage1(audit: ISO45001Stage1Audit, forced_pattern_name
     pattern_name, pattern_desc, clause_map, prompt_table = choose_document_pattern_stage1(
         forced_pattern_name=forced_pattern_name, date_map=date_map
     )
+
+    print("Prompt table for stage 1:")
+    print(prompt_table)
 
 
     batches = split_into_batches(extracted_rows, batch_size=5)
