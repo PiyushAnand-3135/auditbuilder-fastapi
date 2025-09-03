@@ -4413,20 +4413,20 @@ def patch_docx_by_row_index(docx_buffer, audit_rows):
     data_start_idx = None
 
     expected_headers = [
-        "Clause & Description",
-        "C/NC/O",
-        "Document Verification detail with statement of Conformity"
+        "clause & description",
+        "c/nc/o",
+        "document verification detail with statement of conformity"
     ]
 
     def is_section_heading(row):
         vals = [cell.text.strip() for cell in row.cells]
-        return all(vals) and vals[0] == vals[1] == vals[2]
+        return all(vals) and len(set(vals)) == 1  # all cells same text
 
-    # Find correct table & header as before
+    # Find the correct table by checking if its first row contains all expected headers
     for table in doc.tables:
-        for i, row in enumerate(table.rows[:3]):
-            headers = [cell.text.strip() for cell in row.cells]
-            if len(headers) >= 3 and all(h.lower() in [c.lower() for c in headers] for h in expected_headers):
+        for i, row in enumerate(table.rows[:3]):  # look at first 3 rows
+            headers = [cell.text.strip().lower() for cell in row.cells]
+            if all(any(exp in h for h in headers) for exp in expected_headers):
                 target_table = table
                 data_start_idx = i + 1
                 break
@@ -4436,15 +4436,13 @@ def patch_docx_by_row_index(docx_buffer, audit_rows):
     if target_table is None or data_start_idx is None:
         raise ValueError("Could not locate ISO 14001 table in the docx!")
 
-    clause_row_idx = 0  # Index in audit_rows
-    # For each row in the docx table after the header...
+    clause_row_idx = 0
     for row in target_table.rows[data_start_idx:]:
-        # If this row is a section heading (all columns identical), skip it
         if is_section_heading(row):
             continue
         if clause_row_idx >= len(audit_rows):
             break
-        # Patch the row with this clause
+
         row.cells[0].text = str(audit_rows[clause_row_idx].get("Clause & Description", ""))
         row.cells[1].text = str(audit_rows[clause_row_idx].get("C/NC/O", ""))
         row.cells[2].text = str(audit_rows[clause_row_idx].get("Document Verification detail with statement of Conformity", ""))
