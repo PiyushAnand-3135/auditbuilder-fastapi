@@ -4418,15 +4418,19 @@ def patch_docx_by_row_index(docx_buffer, audit_rows):
         "document verification detail with statement of conformity"
     ]
 
+    def normalize(text: str) -> str:
+        # lowercase + strip + collapse multiple spaces/newlines
+        return " ".join(text.lower().split())
+
     def is_section_heading(row):
         vals = [cell.text.strip() for cell in row.cells]
-        return all(vals) and len(set(vals)) == 1  # all cells same text
+        return all(vals) and len(set(vals)) == 1
 
-    # Find the correct table by checking if its first row contains all expected headers
+    # Find the correct table by checking if its header row contains all expected headers
     for table in doc.tables:
-        for i, row in enumerate(table.rows[:3]):  # look at first 3 rows
-            headers = [cell.text.strip().lower() for cell in row.cells]
-            if all(any(exp in h for h in headers) for exp in expected_headers):
+        for i, row in enumerate(table.rows[:3]):
+            headers = [normalize(cell.text) for cell in row.cells]
+            if all(any(exp == h for h in headers) for exp in expected_headers):
                 target_table = table
                 data_start_idx = i + 1
                 break
