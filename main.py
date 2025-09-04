@@ -7,6 +7,7 @@ from routes.iso14001 import router as iso14001_router
 from routes.iso45001 import router as iso45001_router
 from routes.iso9001_14001 import router as iso9001_14001_router
 from routes.iso9001_14001_45001 import router as iso9001_14001_45001_router
+from routes.iso27001 import router as iso27001_router
 
 # Initialize FastAPI app
 app = FastAPI(
@@ -40,3 +41,4 @@ app.include_router(iso14001_router, prefix="/iso14001", tags=["ISO 14001"])
 app.include_router(iso45001_router, prefix="/iso45001", tags=["ISO 45001"])
 app.include_router(iso9001_14001_router, prefix="/iso9001_14001", tags=["ISO 9001 + ISO 14001"])
 app.include_router(iso9001_14001_45001_router, prefix="/iso9001_14001_45001", tags=["ISO 9001 + ISO 14001 + ISO 45001"])
+app.include_router(iso27001_router, prefix="/iso27001", tags=["ISO 27001"])
