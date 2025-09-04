@@ -113,9 +113,6 @@ def remove_markdown_styling(text: str) -> str:
     cleaned = re.sub(r'(\*\*|\*)', '', text)
     return cleaned
 
-def org_initials(org_name: str) -> str:
-    # E.g., "Livpure Limited" → "LL"
-    return "".join([w[0].upper() for w in org_name.split() if w and w[0].isalpha()])
 
 def extract_iso14001_stage2_action_rows(docx_path_or_stream):
     """
@@ -244,17 +241,15 @@ def generate_prompt_for_stage2(batch, audit, clause_map, prompt_table_md, patter
     attendance_list_text = "\n".join([f"- {member}" for member in audit.attendanceSheet])
 
     # Extra IMS_org instructions (only if pattern_desc matches IMS_org style)
-    # Extra IMS_org instructions (only if pattern_desc matches IMS_org style)
     ims_org_instructions = ""
     if "Org initials + EMS (XXX-EMS-...)" in pattern_desc:
-        org_initials_text = org_initials(audit.organizationName)
-        ims_org_instructions = f"""
-     Apply the below pattern only and only if the document number starts with XXX do the below thing
-    - If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-EMS-F-01"), you MUST replace the prefix with **{org_initials_text}** (the initials of the organization's name) when writing the report.
-    - Do not modify the document number or details randomly.
-    - For example, if the organization's name is "{audit.organizationName}", then you must use "{org_initials_text}-EMS-F-01" instead of "XXX-EMS-F-01".
-    - This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.-
-    """
+        ims_org_instructions = """
+ Apply the below pattern only and only if the document number starts with XXX do the below thing
+- If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-EMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report. Only do this when document pattern starts with XXX. Do not do this if it’s just F-X or P-X.
+- Do not modify the document number or details randomly.
+- For example, if the organization's name is "Eco Solutions Pvt Ltd", then you must use "ESPL-EMS-F-01" instead of "XXX-EMS-F-01".
+- This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.-
+"""
 
     return f"""
 You are an ISO 14001:2015 Stage 2 environmental management system (EMS) audit reporting assistant.
@@ -4413,24 +4408,20 @@ def patch_docx_by_row_index(docx_buffer, audit_rows):
     data_start_idx = None
 
     expected_headers = [
-        "clause & description",
-        "c/nc/o",
-        "document verification detail with statement of conformity"
+        "Clause & Description",
+        "C/NC/O",
+        "Document Verification detail with statement of Conformity"
     ]
-
-    def normalize(text: str) -> str:
-        # lowercase + strip + collapse multiple spaces/newlines
-        return " ".join(text.lower().split())
 
     def is_section_heading(row):
         vals = [cell.text.strip() for cell in row.cells]
-        return all(vals) and len(set(vals)) == 1
+        return all(vals) and vals[0] == vals[1] == vals[2]
 
-    # Find the correct table by checking if its header row contains all expected headers
+    # Find correct table & header as before
     for table in doc.tables:
         for i, row in enumerate(table.rows[:3]):
-            headers = [normalize(cell.text) for cell in row.cells]
-            if all(any(exp == h for h in headers) for exp in expected_headers):
+            headers = [cell.text.strip() for cell in row.cells]
+            if len(headers) >= 3 and all(h.lower() in [c.lower() for c in headers] for h in expected_headers):
                 target_table = table
                 data_start_idx = i + 1
                 break
@@ -4440,13 +4431,15 @@ def patch_docx_by_row_index(docx_buffer, audit_rows):
     if target_table is None or data_start_idx is None:
         raise ValueError("Could not locate ISO 14001 table in the docx!")
 
-    clause_row_idx = 0
+    clause_row_idx = 0  # Index in audit_rows
+    # For each row in the docx table after the header...
     for row in target_table.rows[data_start_idx:]:
+        # If this row is a section heading (all columns identical), skip it
         if is_section_heading(row):
             continue
         if clause_row_idx >= len(audit_rows):
             break
-
+        # Patch the row with this clause
         row.cells[0].text = str(audit_rows[clause_row_idx].get("Clause & Description", ""))
         row.cells[1].text = str(audit_rows[clause_row_idx].get("C/NC/O", ""))
         row.cells[2].text = str(audit_rows[clause_row_idx].get("Document Verification detail with statement of Conformity", ""))
@@ -4478,15 +4471,13 @@ def generate_prompt_for_stage1(batch,audit,clause_map=None,prompt_table_md=None,
         )
 
     ims_org_instructions = ""
-    if "Org initials + EMS (XXX-EMS-...)" in pattern_desc:
-        org_initials_text = org_initials(audit.organizationName)
+    if "Org initials + EMS (XXX-EMS-...)" in str(pattern_desc):
         ims_org_instructions = f"""
-         Apply the below pattern only and only if the document number starts with XXX do the below thing
-        - If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-EMS-F-01"), you MUST replace the prefix with **{org_initials_text}** (the initials of the organization's name) when writing the report.
-        - Do not modify the document number or details randomly.
-        - For example, if the organization's name is "{audit.organizationName}", then you must use "{org_initials_text}-EMS-F-01" instead of "XXX-EMS-F-01".
-        - This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.-
-        """
+- If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-EMS-F-01"), you MUST replace the prefix with the initials of the organization's name when writing the report. Only do this when document pattern starts with XXX. Do not do this if it is just F-X or P-X.
+- Do not modify the document number or details randomly.
+- For example, if the organization's name is "Eco Solutions Pvt Ltd", then you must use "ESPL-EMS-F-01" instead of "XXX-EMS-F-01".
+- This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.
+"""
 
     return f"""
 You are an ISO 14001:2015 Stage 1 environmental management system (EMS) audit reporting assistant.
