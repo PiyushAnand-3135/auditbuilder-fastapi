@@ -81,8 +81,8 @@ class ISO27001Stage2Audit(BaseModel):
     auditMode: str
     ictArrangement: str
     effectivenessIfRemote: str
-    startDateOfAudit: str   # Stage 1 audit date (needed for continuity)
-    endDateOfAudit: str     # Stage 1 audit date (needed for continuity)
+    startDateOfAuditStage1: str   # Stage 1 audit date (needed for continuity)
+    endDateOfAuditStage1: str     # Stage 1 audit date (needed for continuity)
     startDateOfAuditStage2: str
     endDateOfAuditStage2: str
     quotedManDaysAdequate: str
@@ -4489,6 +4489,66 @@ def generate_document_dates(clause_map, stage1_start_date_str):
 
     return date_map
 
+
+# ==================== STAGE-2 FUNCTIONS ===============================
+
+def extract_audit_table_iso27001_stage2_ordered(docx_path_or_stream):
+    from docx import Document
+
+    doc = Document(docx_path_or_stream)
+    data = []
+    expected_headers = [
+        "Clause Number",
+        "C/NC/O",
+        "Document Verification detail with statement of Conformity"
+    ]
+
+    for table in doc.tables:
+        header_idx = None
+        # Find header row
+        for i, row in enumerate(table.rows):
+            header_cells = [cell.text.strip().replace('\n', ' ').replace('\r', ' ')
+                            for cell in row.cells]
+            found = sum(1 for h in expected_headers
+                        if any(h.lower() in cell.lower() for cell in header_cells))
+            if found == 3:
+                header_idx = i
+                break
+
+        if header_idx is None:
+            continue
+
+        # ✅ Extract rows in clean format
+        for row in table.rows[header_idx + 1:]:
+            cells = row.cells
+            if len(cells) < 1:
+                continue
+
+            clause = cells[0].text.strip()
+            if not clause:
+                continue
+
+            # Skip repeated header-like rows
+            if clause.lower().startswith("clause number"):
+                continue
+
+            data.append({
+                "Clause Number": clause,
+                "C/NC/O": "{{clause}}",
+                "Document Verification detail with statement of Conformity": "Answer according to the prompt",
+            })
+
+            # ✅ Stop at Clause 10.2
+            if clause.startswith("10.2"):
+                break
+
+        break  # ✅ Only the first audit checklist table
+
+    return data
+
+
+
+
 # ======================= ROUTES ===================================
 
 
@@ -4546,6 +4606,8 @@ async def submit_iso27001_stage1(audit : ISO27001Stage1Audit):
         scope=audit.scope
     )
     print("✅ Brief added success")
+
+    asyncio.sleep(2)
 
     rows = extract_audit_table_iso27001_stage1_ordered(extract_buffer)
     rows = mark_na_clauses_stage1_iso27001(rows, getattr(audit, "na_clauses", []))
@@ -4697,6 +4759,163 @@ async def submit_iso27001_stage1(audit : ISO27001Stage1Audit):
 
     headers = {
         "Content-Disposition": f"attachment; filename={audit.organizationName}_iso9001_stage1_report.docx"
+    }
+
+    return Response(
+        content=final_doc_bytes,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers=headers,
+    )
+
+
+@router.post("/stage2/submit")
+async def submit_iso27001_stage2(audit: ISO27001Stage2Audit):
+    doc = DocxTemplate("templates/iso27001_stage2.docx")
+    context = {
+        "organizationName": audit.organizationName,
+        "address": audit.address,
+        "siteAddress": audit.siteAddress,
+        "virtualSiteDetails": audit.virtualSiteDetails,
+        "numberOfEmployees": audit.numberOfEmployees,
+        "numberOfShifts": audit.numberOfShifts,
+        "numberOfUsers": audit.numberOfUsers,
+        "numberOfServers": audit.numberOfServers,
+        "numberOfWorkStations": audit.numberOfWorkStations,
+        "numberOfDevStaff": audit.numberOfDevStaff,
+        "numberOfEmployeesOnSite": audit.numberOfEmployeesOnSite,
+        "emailId": audit.emailId,
+        "contactPerson": audit.contactPerson,
+        "telephoneFax": audit.telephoneFax,
+        "scope": audit.scope,
+        "businessSector": audit.businessSector,
+        "businessSectorRisk": audit.businessSectorRisk,
+        "auditMode": audit.auditMode,
+        "ictArrangement": audit.ictArrangement,
+        "effectivenessIfRemote": audit.effectivenessIfRemote,
+        "startDateOfAudit": audit.startDateOfAuditStage2,
+        "endDateOfAudit": audit.endDateOfAuditStage2,
+        "auditTeam": "\n".join(audit.auditTeam),
+        "auditManDays": audit.auditManDays,
+        "quotedManDaysAdequate": audit.quotedManDaysAdequate,
+        "changeInEmployeeDetail": audit.changeInEmployeeDetail,
+        "changeInScope": audit.changeInScope,
+        "additionalInformation": audit.additionalInformation,
+        "attendanceSheet": "\n".join(audit.attendanceSheet),
+        "clientName": audit.clientName,
+        "designation": audit.designation,
+        "auditorName": audit.auditorName,
+        "reviewerName": audit.reviewerName,
+        "qualityManagerName": audit.qualityManagerName,
+        "clause": "{{clause}}",
+    }
+
+    doc.render(context)
+    extract_buffer = io.BytesIO()
+    doc.save(extract_buffer)
+    extract_buffer.seek(0)
+
+
+
+    # extract_buffer = await add_org_brief_to_docx_iso9001_14001(
+    #     extract_buffer,
+    #     company_name=audit.organizationName,
+    #
+    #     scope=audit.scope
+    # )
+    # print("✅ Brief added success")
+    #
+    # asyncio.sleep(2)
+
+    rows = extract_audit_table_iso27001_stage2_ordered(extract_buffer)
+    rows = mark_na_clauses_stage1_iso27001(rows, getattr(audit, "na_clauses", []))
+    rows = update_cnc_placeholders_stage1_iso27001(rows)
+
+    print("Rows: ", rows)
+
+    pattern_name, _, clause_map, _ = choose_document_pattern_stage1()
+    date_map = generate_document_dates(clause_map, audit.startDateOfAudit)
+
+    # Step 2: Rebuild prompt_table with the SAME pattern + date_map
+    pattern_name, pattern_desc, clause_map, prompt_table = choose_document_pattern_stage1(
+        forced_pattern_name=pattern_name,  # 🔑 lock the same pattern
+        date_map=date_map
+    )
+
+    print("Prompt table for ISO 27001 Stage 1:")
+    print(prompt_table)
+
+    batches = split_into_batches(rows, batch_size=5)
+    updated_rows = []
+    mistral_api_url = "https://nodeapi.accuratereport.org/api/mistral/"
+    headers = {"Content-Type": "application/json"}
+    MAX_RETRIES = 5
+
+    # Step 4: Send batches to LLM for evidence rephrasing
+    for i, batch in enumerate(batches):
+        print(f"🔄 Sending ISO 27001 Stage 1 batch {i + 1}/{len(batches)}")
+        prompt = generate_prompt_for_stage1_iso27001(  # <-- ISO 27001 specific
+            batch, audit, clause_map, prompt_table, pattern_desc,
+        )
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                async with httpx.AsyncClient(timeout=300.0) as client:
+                    response = await client.post(
+                        mistral_api_url, json={"prompt": prompt}, headers=headers
+                    )
+
+                    # Log details if server returns error code
+                    if response.status_code >= 400:
+                        print(f"⚠️ Server returned {response.status_code}")
+                        print("Headers:", response.headers)
+                        print("Body (truncated):", response.text[:1000])
+
+                    response.raise_for_status()
+
+                    rephrased_text = (
+                        response.json().get("response", "")
+                        if response.headers.get("content-type", "").startswith("application/json")
+                        else response.text
+                    )
+                    batch_result = ensure_list_of_dicts(rephrased_text)
+
+                    # Strip markdown styling
+                    for row in batch_result:
+                        for key in row:
+                            if isinstance(row[key], str):
+                                row[key] = remove_markdown_styling(row[key])
+
+                    updated_rows.extend(batch_result)
+                    print(f"✅ ISO 27001 Stage 1 batch {i + 1} succeeded on attempt {attempt}")
+                    await asyncio.sleep(2)
+                    break
+
+            except httpx.HTTPStatusError as e:
+                print(f"❌ ISO 27001 Stage 1 batch {i + 1}, attempt {attempt} failed with HTTP {e.response.status_code}")
+                await asyncio.sleep(5)
+                print("Response text (truncated):", e.response.text[:1000])
+                if attempt == MAX_RETRIES:
+                    error_msg = f"Max batch retry reached. ISO 27001 Stage 1 batch {i + 1} failed."
+                    print(f"❌ {error_msg}")
+                    return {"error": error_msg}
+
+            except Exception as e:
+                print(f"❌ ISO 27001 Stage 1 batch {i + 1}, attempt {attempt} failed with error: {e}")
+                await asyncio.sleep(5)
+                if attempt == MAX_RETRIES:
+                    error_msg = f"Max batch retry reached. ISO 27001 Stage 1 batch {i + 1} failed."
+                    print(f"❌ {error_msg}")
+                    return {"error": error_msg}
+
+    print("✅ All ISO 27001 Stage 1 batches completed. Total rows:", len(updated_rows))
+    patched_buffer = patch_docx_by_row_index_stage1_iso27001(extract_buffer, updated_rows)
+
+
+
+
+    final_doc_bytes = extract_buffer.getvalue()
+
+    headers = {
+        "Content-Disposition": f"attachment; filename={audit.organizationName}_iso14001_stage2_report.docx"
     }
 
     return Response(

@@ -19,6 +19,7 @@ app = FastAPI(
 origins = [
     "https://accuratereport.org",
     "https://www.accuratereport.org",
+    "http://localhost:3000"
 ]
 
 # CORS Middleware
