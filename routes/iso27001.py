@@ -4996,8 +4996,6 @@ async def submit_iso27001_stage2(audit: ISO27001Stage2Audit, forced_pattern_name
     rows = mark_na_clauses_stage1_iso27001(rows, getattr(audit, "na_clauses", []))
     rows = update_cnc_placeholders_stage1_iso27001(rows)
 
-    print("Rows: ", rows)
-
     pattern_name, pattern_desc, clause_map, prompt_table = choose_document_pattern_stage1(
         forced_pattern_name=forced_pattern_name,
         date_map=date_map
@@ -5044,12 +5042,12 @@ async def submit_iso27001_stage2(audit: ISO27001Stage2Audit, forced_pattern_name
                                 row[key] = remove_markdown_styling(row[key])
 
                     updated_rows.extend(batch_result)
-                    print(f"✅ ISO 27001 Stage 1 batch {i + 1} succeeded on attempt {attempt}")
+                    print(f"✅ ISO 27001 Stage 2 batch {i + 1} succeeded on attempt {attempt}")
                     await asyncio.sleep(2)
                     break
 
             except httpx.HTTPStatusError as e:
-                print(f"❌ ISO 27001 Stage 1 batch {i + 1}, attempt {attempt} failed with HTTP {e.response.status_code}")
+                print(f"❌ ISO 27001 Stage 2 batch {i + 1}, attempt {attempt} failed with HTTP {e.response.status_code}")
                 await asyncio.sleep(5)
                 print("Response text (truncated):", e.response.text[:1000])
                 if attempt == MAX_RETRIES:
@@ -5058,7 +5056,7 @@ async def submit_iso27001_stage2(audit: ISO27001Stage2Audit, forced_pattern_name
                     return {"error": error_msg}
 
             except Exception as e:
-                print(f"❌ ISO 27001 Stage 1 batch {i + 1}, attempt {attempt} failed with error: {e}")
+                print(f"❌ ISO 27001 Stage 2 batch {i + 1}, attempt {attempt} failed with error: {e}")
                 await asyncio.sleep(5)
                 if attempt == MAX_RETRIES:
                     error_msg = f"Max batch retry reached. ISO 27001 Stage 1 batch {i + 1} failed."
