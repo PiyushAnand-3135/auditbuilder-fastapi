@@ -46,8 +46,10 @@ class ISO27001Stage1Audit(BaseModel):
     auditMode: str
     ictArrangement: str
     effectivenessIfRemote: str
-    startDateOfAudit: str
-    endDateOfAudit: str
+    startDateOfAuditStage1: str
+    endDateOfAuditStage1: str
+    startDateOfAuditStage2: Optional[str] = None
+    endDateOfAuditStage2: Optional[str] = None
     quotedManDaysAdequate: str  # "Yes" / "No"
     changeInEmployeeDetail: str  # "Yes" / "No"
     changeInScope: str  # "Yes" / "No"
@@ -4033,7 +4035,7 @@ def generate_prompt_for_stage1_iso27001(batch, audit, clause_map, prompt_table_m
     - Organization: {audit.organizationName}
     - ISMS Scope: {audit.scope}
     - Address: {audit.address}
-    - Stage 1 Audit Dates: {audit.startDateOfAudit} to {audit.endDateOfAudit}
+    - Stage 1 Audit Dates: {audit.startDateOfAuditStage1} to {audit.endDateOfAuditStage1}
 
     ### Attendance Sheet:
     Below is the list of personnel present during the audit. Use these names accurately when drafting evidence. Assign relevant titles/roles (e.g., CEO, IT Manager, ISMS Coordinator, Information Security Officer, etc.) from this list.
@@ -4525,11 +4527,16 @@ def extract_audit_table_iso27001_stage2_ordered(docx_path_or_stream):
                 continue
 
             clause = cells[0].text.strip()
-            if not clause:
-                continue
 
             # Skip repeated header-like rows
             if clause.lower().startswith("clause number"):
+                continue
+
+            # 🚫 Skip merged section headers (e.g. INFORMATION SECURITY CONTROLS, 6.0 People controls, 7.0 Physical controls)
+            if clause.isupper() or clause.endswith("controls"):
+                continue
+
+            if not clause:
                 continue
 
             data.append({
@@ -4538,22 +4545,181 @@ def extract_audit_table_iso27001_stage2_ordered(docx_path_or_stream):
                 "Document Verification detail with statement of Conformity": "Answer according to the prompt",
             })
 
-            # ✅ Stop at Clause 10.2
-            if clause.startswith("10.2"):
-                break
-
         break  # ✅ Only the first audit checklist table
 
     return data
 
 
 
+def generate_prompt_for_stage2_iso27001(batch, audit, clause_map, prompt_table_md, pattern_desc):
+    # Collect clause-specific prompts if you use them (customize per your clause_map)
+    stage1_prompts = []
+    for clause, docs in clause_map.items():
+        for doc in docs:
+            if "Stage 1 Prompt" in doc and doc["Stage 1 Prompt"]:
+                stage1_prompts.append(f"Clause {clause}: {doc['Stage 1 Prompt']}")
+    stage1_prompt_text = "\n".join(stage1_prompts)
+
+    attendance_list_text = "\n".join([f"- {member}" for member in audit.attendanceSheet])
+    org_initials_text = org_initials(audit.organizationName)
+
+    # Extra IMS_org instructions (only if pattern_desc matches IMS_org style)
+    ims_org_instructions = ""
+    if "Org initials + ISMS (XXX-ISMS-...)" in pattern_desc:
+        ims_org_instructions = f"""
+        Apply the below pattern only and only if the document number starts with XXX do the below thing
+        - If a document number has a prefix like "XXX" or "BLPL" (e.g., "XXX-ISMS-F-01"), you MUST replace the prefix with **{org_initials_text}** (the initials of the organization's name).
+        - Do not modify the document number or details randomly.
+        - For example, if the organization's name is "{audit.organizationName}", then you must use "{org_initials_text}-ISMS-F-01" instead of "XXX-ISMS-F-01".
+        - This rule is strict and must never be skipped. Under no circumstances should `XXX-` or `BLPL-` remain in any document number in your output.
+        """
+
+    return f"""
+    You are an ISO 27001:2022 Information Security Management System (ISMS) Stage 1 audit reporting assistant.
+
+    Use the following document numbering format throughout all evidence:
+    **Pattern**: {pattern_desc}
+    {ims_org_instructions}
+
+    {prompt_table_md}
+
+    ---
+
+    ### ABSOLUTE FORMATTING RULES (PLAIN TEXT ONLY – STRICT):
+    - The output must be in strict plain text — no markdown, no bold (**), italics (*), underscores (_), bullet symbols from markdown (- or * as formatting), tables, headings, or any other non-standard formatting.
+    - Do not generate any special characters used for styling in markdown (such as *, _, `, >, |, ~, #, [], ()).
+    - Write all content in normal sentences using only letters, numerals, and standard punctuation.
+    - Document names and numbers must be written exactly as provided, without surrounding symbols or formatting.
+    - For spacing, only use actual line breaks; no markdown or decorative spacing.
+    - Even if the input contains markdown or symbols, remove them in the output — ensure the output is fully cleaned.
+    - Any output that contains forbidden formatting is invalid.
+
+    **STRICT and REDUNDANT RULES (do NOT break them):**
+    - Use the document date for each document as mentioned in the prompt table. Do not generate them randomly.
+    - For each clause, ONLY list as evidence the exact documents and their numbers provided for that clause in the input.
+    - If a clause has NO listed documents, do NOT mention, imply, or invent any document in the answer for that clause.
+    - NEVER create, paraphrase, infer, or generate document names or numbers based on the pattern or clause context.
+    - Do NOT combine, split, or otherwise modify listed document names/numbers.
+    - **In summary:** ONLY reference documents exactly as listed. DO NOT reference documents for a clause if none are provided.
+    - Format every answer strictly as paragraphs, one paragraph for each distinct answer or point. If the content contains any markdown or tables, rewrite them into plain paragraph form while preserving all details and meaning. No table, markdown, or code formatting are allowed in the output.
+
+    ### Audit Details:
+    - Organization: {audit.organizationName}
+    - ISMS Scope: {audit.scope}
+    - Address: {audit.address}
+    - Stage 2 Audit Dates: {audit.startDateOfAuditStage2} to {audit.endDateOfAuditStage1}
+
+    ### Attendance Sheet:
+    Below is the list of personnel present during the audit. Use these names accurately when drafting evidence. Assign relevant titles/roles (e.g., CEO, IT Manager, ISMS Coordinator, Information Security Officer, etc.) from this list.
+
+    {attendance_list_text}
+
+    ---
+
+    ### Instructions for ISO 27001:2022 Stage 1 ISMS Report Writing:
+    - For each clause, the answer must be concise and limited to approximately 80 to 100 words, including only the necessary information relevant to the clause and documents.
+    - Only update the 'Document Verification detail with statement of Conformity' field of each input item.
+    - Do NOT alter or remove any other fields (e.g., 'Clause Number', 'C/NC/O').
+    - For 'C' (Conformity): Rephrase the evidence as a factual, positive confirmation that ISO 27001:2022 requirements for that clause are met, referencing only the clause(s) and any relevant listed document(s).
+    - For 'NC' (Nonconformity): Clearly state what does not conform to ISO 27001:2022, referencing only listed clause(s) and document(s).
+    - For 'O' (Observation): Reword the evidence as a neutral, factual observation, referencing only the listed clause(s) and document(s).
+    - If the 'Clause Number' field includes multiple items, write a structured response that clearly addresses each in order.
+    - STRICTLY follow the order of batch items; do NOT change structure or order — modify only the evidence field.
+    - Do NOT add, merge, or invent document references under any circumstances. Omit document references if none are listed.
+    - Use specific names and roles from the attendance list in your responses as appropriate.
+    - Responses must align with ISO 27001:2022 Stage 1 ISMS audit standards wherever the clause applies.
+    - Ensure every answer is separated by a blank line (two newlines) for clarity.
+    - Output must be only the list of dictionaries, updated as per these rules.
+    ---
+
+    ### Input:
+    Here is the list of clauses and requirements. Do NOT change structure — edit only the 'Document Verification detail with statement of Conformity' field.
+
+    {json.dumps(batch, indent=2, ensure_ascii=False)}
+
+    ---
+
+    ### Output:
+    Respond with ONLY the list of dictionaries, with revised 'Document Verification detail with statement of Conformity' fields.
+    Do NOT add markdown, comments, or extra text.
+    Separate each answer by a single blank line (\\n\\n) for readability.
+    """
+
+def patch_docx_by_row_index_stage2_iso27001(docx_buffer, audit_rows):
+    from docx import Document
+
+    docx_buffer.seek(0)
+    doc = Document(docx_buffer)
+
+    header_candidates = {
+        "clause number": "Clause Number",
+        "c/nc/o": "C/NC/O",
+        "document verification detail with statement of conformity": "Document Verification detail with statement of Conformity"
+    }
+
+    def normalize(txt):
+        return " ".join(txt.lower().replace('\n', ' ').replace('\r', ' ').replace('\t', ' ').split())
+
+    # Find table & header mapping
+    target_table, header_row_idx, col_map = None, None, {}
+    for table in doc.tables:
+        for i, row in enumerate(table.rows[:5]):
+            headers = [normalize(cell.text) for cell in row.cells]
+            matches = {}
+            for key in header_candidates:
+                for colidx, hdrtxt in enumerate(headers):
+                    if key in hdrtxt:
+                        matches[key] = colidx
+                        break
+            if len(matches) == len(header_candidates):
+                target_table, header_row_idx, col_map = table, i, matches
+                break
+        if target_table:
+            break
+
+    if not target_table:
+        raise ValueError("Could not locate ISO 27001 table with correct header.")
+
+    data_start_idx = header_row_idx + 1
+    clause_row_idx = 0
+
+    for row in target_table.rows[data_start_idx:]:
+        if clause_row_idx >= len(audit_rows):
+            break
+
+        vals = [cell.text.strip() for cell in row.cells]
+        if not any(vals):
+            continue
+
+        clause_text = vals[col_map["clause number"]] if col_map["clause number"] < len(vals) else ""
+
+        # 🚫 Skip merged/section rows (e.g. INFORMATION SECURITY CONTROLS, "6.0 People controls")
+        if not clause_text or clause_text.isupper() or clause_text.endswith("controls"):
+            continue
+
+        audit_row = audit_rows[clause_row_idx]
+
+        # ✅ Only update non-clause columns
+        for key, audit_key in header_candidates.items():
+            if key == "clause number":
+                continue  # don't overwrite clause numbers
+            idx = col_map[key]
+            if idx < len(row.cells):
+                row.cells[idx].text = str(audit_row.get(audit_key, row.cells[idx].text))
+
+        clause_row_idx += 1
+
+    docx_buffer.seek(0)
+    docx_buffer.truncate(0)
+    doc.save(docx_buffer)
+    docx_buffer.seek(0)
+    return docx_buffer
+
 
 # ======================= ROUTES ===================================
 
-
 @router.post("/stage1/submit")
-async def submit_iso27001_stage1(audit : ISO27001Stage1Audit):
+async def submit_iso27001_stage1(audit : ISO27001Stage1Audit, forced_pattern_name=None, date_map=None):
     doc = DocxTemplate("templates/iso27001_stage1.docx")
     context = {
         "organizationName": audit.organizationName,
@@ -4576,8 +4742,8 @@ async def submit_iso27001_stage1(audit : ISO27001Stage1Audit):
         "auditMode": audit.auditMode,
         "ictArrangement": audit.ictArrangement,
         "effectivenessIfRemote": audit.effectivenessIfRemote,
-        "startDateOfAudit": audit.startDateOfAudit,
-        "endDateOfAudit": audit.endDateOfAudit,
+        "startDateOfAudit": audit.startDateOfAuditStage1,
+        "endDateOfAudit": audit.endDateOfAuditStage1,
         "auditTeam": "\n".join(audit.auditTeam),
         "auditManDays": audit.auditManDays,
         "quotedManDaysAdequate": audit.quotedManDaysAdequate,
@@ -4613,17 +4779,17 @@ async def submit_iso27001_stage1(audit : ISO27001Stage1Audit):
     rows = mark_na_clauses_stage1_iso27001(rows, getattr(audit, "na_clauses", []))
     rows = update_cnc_placeholders_stage1_iso27001(rows)
 
-    pattern_name, _, clause_map, _ = choose_document_pattern_stage1()
-    date_map = generate_document_dates(clause_map, audit.startDateOfAudit)
 
-    # Step 2: Rebuild prompt_table with the SAME pattern + date_map
+    if not forced_pattern_name or not date_map:
+        _pattern_name, _, _clause_map, _ = choose_document_pattern_stage1()
+        _date_map = generate_document_dates(_clause_map, audit.startDateOfAuditStage1)
+    else:
+        _pattern_name, _date_map = forced_pattern_name, date_map
+
     pattern_name, pattern_desc, clause_map, prompt_table = choose_document_pattern_stage1(
-        forced_pattern_name=pattern_name,  # 🔑 lock the same pattern
-        date_map=date_map
+        forced_pattern_name=_pattern_name,
+        date_map=_date_map
     )
-
-    print("Prompt table for ISO 27001 Stage 1:")
-    print(prompt_table)
 
     batches = split_into_batches(rows, batch_size=5)
     updated_rows = []
@@ -4758,7 +4924,7 @@ async def submit_iso27001_stage1(audit : ISO27001Stage1Audit):
     final_doc_bytes = patched_buffer.getvalue()
 
     headers = {
-        "Content-Disposition": f"attachment; filename={audit.organizationName}_iso9001_stage1_report.docx"
+        "Content-Disposition": f"attachment; filename={audit.organizationName}_iso27001_stage1_report.docx"
     }
 
     return Response(
@@ -4769,7 +4935,7 @@ async def submit_iso27001_stage1(audit : ISO27001Stage1Audit):
 
 
 @router.post("/stage2/submit")
-async def submit_iso27001_stage2(audit: ISO27001Stage2Audit):
+async def submit_iso27001_stage2(audit: ISO27001Stage2Audit, forced_pattern_name=None, date_map=None):
     doc = DocxTemplate("templates/iso27001_stage2.docx")
     context = {
         "organizationName": audit.organizationName,
@@ -4816,15 +4982,15 @@ async def submit_iso27001_stage2(audit: ISO27001Stage2Audit):
 
 
 
-    # extract_buffer = await add_org_brief_to_docx_iso9001_14001(
-    #     extract_buffer,
-    #     company_name=audit.organizationName,
-    #
-    #     scope=audit.scope
-    # )
-    # print("✅ Brief added success")
-    #
-    # asyncio.sleep(2)
+    extract_buffer = await add_org_brief_to_docx_iso9001_14001(
+        extract_buffer,
+        company_name=audit.organizationName,
+
+        scope=audit.scope
+    )
+    print("✅ Brief added success")
+
+    asyncio.sleep(2)
 
     rows = extract_audit_table_iso27001_stage2_ordered(extract_buffer)
     rows = mark_na_clauses_stage1_iso27001(rows, getattr(audit, "na_clauses", []))
@@ -4832,19 +4998,12 @@ async def submit_iso27001_stage2(audit: ISO27001Stage2Audit):
 
     print("Rows: ", rows)
 
-    pattern_name, _, clause_map, _ = choose_document_pattern_stage1()
-    date_map = generate_document_dates(clause_map, audit.startDateOfAudit)
-
-    # Step 2: Rebuild prompt_table with the SAME pattern + date_map
     pattern_name, pattern_desc, clause_map, prompt_table = choose_document_pattern_stage1(
-        forced_pattern_name=pattern_name,  # 🔑 lock the same pattern
+        forced_pattern_name=forced_pattern_name,
         date_map=date_map
     )
 
-    print("Prompt table for ISO 27001 Stage 1:")
-    print(prompt_table)
-
-    batches = split_into_batches(rows, batch_size=5)
+    batches = split_into_batches(rows, batch_size=8)
     updated_rows = []
     mistral_api_url = "https://nodeapi.accuratereport.org/api/mistral/"
     headers = {"Content-Type": "application/json"}
@@ -4853,7 +5012,7 @@ async def submit_iso27001_stage2(audit: ISO27001Stage2Audit):
     # Step 4: Send batches to LLM for evidence rephrasing
     for i, batch in enumerate(batches):
         print(f"🔄 Sending ISO 27001 Stage 1 batch {i + 1}/{len(batches)}")
-        prompt = generate_prompt_for_stage1_iso27001(  # <-- ISO 27001 specific
+        prompt = generate_prompt_for_stage2_iso27001(  # <-- ISO 27001 specific
             batch, audit, clause_map, prompt_table, pattern_desc,
         )
         for attempt in range(1, MAX_RETRIES + 1):
@@ -4907,15 +5066,79 @@ async def submit_iso27001_stage2(audit: ISO27001Stage2Audit):
                     return {"error": error_msg}
 
     print("✅ All ISO 27001 Stage 1 batches completed. Total rows:", len(updated_rows))
-    patched_buffer = patch_docx_by_row_index_stage1_iso27001(extract_buffer, updated_rows)
+    # print("Updated rows: ",updated_rows)
+    patched_buffer = patch_docx_by_row_index_stage2_iso27001(extract_buffer, updated_rows)
+
+    # ---- ISO 27001 Stage-1 MINOR NC Extraction, Summarization, and Table Patch -------
+    minor_nc_rows = extract_minor_nc_rows_iso27001(updated_rows)
+    minor_nc_summaries = []
+    MAX_RETRIES = 3  # Robust retry logic for LLM query
+
+    if minor_nc_rows:
+        summary_prompt = build_minor_nc_summary_prompt_iso27001(minor_nc_rows)
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    resp = await client.post(
+                        mistral_api_url,
+                        json={"prompt": summary_prompt},
+                        headers=headers
+                    )
+                    resp.raise_for_status()
+                    summary_text = (
+                        resp.json().get("response", "")
+                        if resp.headers.get("content-type", "").startswith("application/json")
+                        else resp.text
+                    )
+                minor_nc_summaries = clean_minor_nc_summaries(summary_text)
+                patched_buffer = patch_minor_ncs_table(patched_buffer, minor_nc_summaries)
+                break  # Success!
+            except Exception as e:
+                print(f"[WARN] ISO 27001 Stage-1 Minor NC batch attempt {attempt} failed: {e}")
+                await asyncio.sleep(2)
+                if attempt == MAX_RETRIES:
+                    print("❌ Max retries reached for ISO 27001 Stage-1 Minor NC summarization. Skipping patching.")
+                    minor_nc_summaries = []
+                    # Optionally leave patched_buffer unchanged
+                else:
+                    continue  # Retry
+    # -----------------------------------------------------------------
+
+    # ---- OBSERVATION Extraction, Summarization, and Table Patch (ISO 27001 Stage 1) -------
+    obs_rows = extract_observation_rows_iso27001(updated_rows)
+    if obs_rows:
+        summary_prompt_obs = build_observation_summary_prompt_iso27001(obs_rows)
+        summary_text_obs = None
+        MAX_RETRIES = 3
+        for attempt in range(1, MAX_RETRIES + 1):
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    resp = await client.post(
+                        mistral_api_url, json={"prompt": summary_prompt_obs}, headers=headers
+                    )
+                    resp.raise_for_status()
+                    summary_text_obs = (
+                        resp.json().get("response", "")
+                        if resp.headers.get("content-type", "").startswith("application/json")
+                        else resp.text
+                    )
+                print(f"✅ ISO 27001 Observation batch succeeded on attempt {attempt}")
+                break
+            except Exception as e:
+                print(f"⚠️ ISO 27001 Observation batch attempt {attempt} failed: {e}")
+                if attempt == MAX_RETRIES:
+                    print("❌ Max observation batch retry reached. Observation batch failed.")
+                    summary_text_obs = ""
+        if summary_text_obs:  # Only proceed if we got a response
+            obs_summaries = clean_observation_summaries(summary_text_obs)
+            patched_buffer = patch_observations_table(patched_buffer, obs_summaries)
+    # --------------------------------------------------------------------------------------
 
 
-
-
-    final_doc_bytes = extract_buffer.getvalue()
+    final_doc_bytes = patched_buffer.getvalue()
 
     headers = {
-        "Content-Disposition": f"attachment; filename={audit.organizationName}_iso14001_stage2_report.docx"
+        "Content-Disposition": f"attachment; filename={audit.organizationName}_iso27001_stage2_report.docx"
     }
 
     return Response(
@@ -4923,3 +5146,61 @@ async def submit_iso27001_stage2(audit: ISO27001Stage2Audit):
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         headers=headers,
     )
+
+@router.post("/download-both")
+async def download_stage1_and_stage2_reports(payload: CombinedISO27001AuditRequest):
+    stage1_audit = payload.stage1_audit
+    stage2_audit = payload.stage2_audit
+
+    # Pick YOUR pattern ONCE, using stage2’s function: (It’s fine for IMS blending)
+    pattern_name, pattern_desc, clause_map, prompt_table = choose_document_pattern_stage1()
+
+    date_map = generate_document_dates(clause_map, stage1_audit.startDateOfAuditStage1)
+    pattern_name, pattern_desc, clause_map, prompt_table = choose_document_pattern_stage1(
+        forced_pattern_name=pattern_name,
+        date_map=date_map
+    )
+
+    print("Pattern chosen for both:", pattern_name)
+
+    # Forward that pattern to both generation calls
+    stage1_response = await submit_iso27001_stage1(stage1_audit, forced_pattern_name=pattern_name, date_map=date_map)
+    await asyncio.sleep(2)
+    stage2_response = await submit_iso27001_stage2(stage2_audit, forced_pattern_name=pattern_name, date_map=date_map)
+
+    # --- Safe extraction of bytes regardless of return type ---
+    def extract_bytes(resp):
+        if resp is None:
+            return b""
+        if hasattr(resp, "body"):           # FastAPI Response
+            return resp.body
+        if hasattr(resp, "content"):        # httpx.Response
+            return resp.content
+        if isinstance(resp, dict):          # Our code returned dict
+            # adjust key if different in your dict
+            return resp.get("file") or resp.get("content") or b""
+        return bytes(resp) if isinstance(resp, (bytes, bytearray)) else b""
+
+    stage1_bytes = extract_bytes(stage1_response)
+    stage2_bytes = extract_bytes(stage2_response)
+
+    stage1_filename = f"{stage1_audit.organizationName}_iso27001_stage1.docx"
+    stage2_filename = f"{stage2_audit.organizationName}_iso27001_stage2.docx"
+
+    # Make and return ZIP
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zipf:
+        zipf.writestr(stage1_filename, stage1_bytes)
+        zipf.writestr(stage2_filename, stage2_bytes)
+
+    zip_buffer.seek(0)
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={
+            "Content-Disposition": "attachment"
+        },
+    )
+
+
+
