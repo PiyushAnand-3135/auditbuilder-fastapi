@@ -48,6 +48,10 @@ class ISO27001Stage1Audit(BaseModel):
     auditMode: str
     ictArrangement: str
     effectivenessIfRemote: str
+    anyDeviationFromAuditPlan: str
+    anySignificantIssues: str
+    identificationOfAuditTeam: str
+    anySignificantChange: str
     startDateOfAuditStage1: str
     endDateOfAuditStage1: str
     startDateOfAuditStage2: Optional[str] = None
@@ -85,6 +89,10 @@ class ISO27001Stage2Audit(BaseModel):
     auditMode: str
     ictArrangement: str
     effectivenessIfRemote: str
+    anyDeviationFromAuditPlan: str
+    anySignificantIssues: str
+    identificationOfAuditTeam: str
+    anySignificantChange: str
     startDateOfAuditStage1: str   # Stage 1 audit date (needed for continuity)
     endDateOfAuditStage1: str     # Stage 1 audit date (needed for continuity)
     startDateOfAuditStage2: str
@@ -5136,6 +5144,10 @@ async def submit_iso27001_stage2(audit: ISO27001Stage2Audit, forced_pattern_name
         "auditMode": audit.auditMode,
         "ictArrangement": audit.ictArrangement,
         "effectivenessIfRemote": audit.effectivenessIfRemote,
+        "anyDeviationFromAuditPlan": audit.anyDeviationFromAuditPlan,
+        "anySignificantIssues": audit.anySignificantIssues,
+        "identificationOfAuditTeam": audit.identificationOfAuditTeam,
+        "anySignificantChange": audit.anySignificantChange,
         "startDateOfAudit": audit.startDateOfAuditStage2,
         "endDateOfAudit": audit.endDateOfAuditStage2,
         "auditTeam": "\n".join(audit.auditTeam),
