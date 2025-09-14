@@ -20,6 +20,8 @@ import asyncio
 from datetime import datetime, timedelta
 
 router = APIRouter()
+stage1_minor_nc_store = []
+stage1_observation_store = []
 
 # ==================== MODELS ==========================
 
@@ -4715,6 +4717,159 @@ def patch_docx_by_row_index_stage2_iso27001(docx_buffer, audit_rows):
     docx_buffer.seek(0)
     return docx_buffer
 
+async def generate_completed_corrective_actions(stage1_minor_nc_store, scope_text, attendance_text, mistral_api_url, headers):
+    """
+    Given Stage 1 NCs, scope, and attendance, ask LLM for a past-tense corrective action for each NC.
+    Returns a list of strings aligned with the store order.
+    """
+    actions = []
+    max_retries = 3
+    base_delay = 2
+
+    for nc in stage1_minor_nc_store:
+        clause_no = nc.get("Cl. No", "")
+        summary = nc.get("summary", "")
+        prompt = (
+            f"For ISO clause {clause_no}, scope: {scope_text}, "
+            f"attendance: {attendance_text}, "
+            f"and the following nonconformity: \"{summary}\", "
+            "generate a random, realistic corrective action that HAS ALREADY BEEN IMPLEMENTED "
+            "and is now completed. "
+            "Write the action in the past tense, e.g., 'The XYZ procedure was revised and all staff were trained accordingly.' "
+            "Output only a concise, plain-English paragraph of 2-4 sentences describing what was done, "
+            "including any implementation and verification. "
+            "Do NOT return JSON, bullet points, lists, or code fences — just the text description."
+        )
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                async with httpx.AsyncClient(timeout=60.0) as client:
+                    resp = await client.post(mistral_api_url, json={"prompt": prompt}, headers=headers)
+                    resp.raise_for_status()
+                    if resp.headers.get("content-type", "").startswith("application/json"):
+                        action = resp.json().get("response", "")
+                    else:
+                        action = resp.text
+                    actions.append(action.strip())
+                    break  # success, exit retry loop
+            except (httpx.RequestError, httpx.HTTPStatusError) as e:
+                if attempt == max_retries:
+                    actions.append(f"Failed to generate corrective action for NC (Clause {clause_no}): {e}")
+                else:
+                    delay = base_delay * (2 ** (attempt - 1)) + random.uniform(0, 1)
+                    await asyncio.sleep(delay)
+    return actions
+
+def clean_corrective_action_text(raw_text: str) -> str:
+    """
+    Cleans corrective action text from LLM.
+    If JSON is detected, extracts and flattens meaningful fields into a sentence.
+    Removes markdown code fences.
+    """
+    if not raw_text:
+        return ""
+
+    # Remove markdown/json code fences
+    cleaned = re.sub(r"^``````$", "", raw_text.strip(), flags=re.MULTILINE).strip()
+
+    # Try parsing as JSON
+    try:
+        obj = json.loads(cleaned)
+        # If top-level dict and has corrective_action
+        if isinstance(obj, dict) and "corrective_action" in obj:
+            ca_obj = obj["corrective_action"]
+            if isinstance(ca_obj, dict):
+                parts = []
+                for key in ["action_taken", "implementation", "verification"]:
+                    if ca_obj.get(key):
+                        parts.append(str(ca_obj[key]).strip())
+                return " ".join(parts)
+        # If obj itself is a string, return it
+        if isinstance(obj, str):
+            return obj
+    except Exception:
+        pass  # if not JSON, just keep original text
+
+    return cleaned
+
+async def transfer_stage1_ncs_to_stage2_doc(patched_buffer, audit, mistral_api_url, headers):
+    print(f"[DEBUG] Transferring {len(stage1_minor_nc_store)} Stage-1 NCs to Stage-2")
+    if stage1_minor_nc_store:
+        attendance_text = ", ".join(audit.attendanceSheet)
+        scope_text = audit.scope
+        actions = await generate_completed_corrective_actions(
+            stage1_minor_nc_store,
+            scope_text,
+            attendance_text,
+            mistral_api_url,
+            headers
+        )
+        combined_entries = []
+        for nc, action in zip(stage1_minor_nc_store, actions):
+            cleaned_action = clean_corrective_action_text(action)
+            combined_entries.append(
+                f"Clause {nc.get('Cl. No', '')}\n"
+                f"Nonconformity: {nc.get('summary', '')}\n"
+                f"Corrective action taken: {cleaned_action}"
+            )
+    else:
+        combined_entries = ["No nonconformities from Stage 1."]
+
+    from docx import Document
+    patched_buffer.seek(0)
+    doc = Document(patched_buffer)
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                if "Non conformities raised in Stage-1:" in cell.text:
+                    cell.text = "Non conformities raised in Stage-1:\n\n" + "\n\n".join(combined_entries)
+                    break
+            else:
+                continue
+            break
+        else:
+            continue
+        break
+
+    patched_buffer.seek(0)
+    patched_buffer.truncate(0)
+    doc.save(patched_buffer)
+    patched_buffer.seek(0)
+    return patched_buffer
+
+async def transfer_stage1_observations_to_stage2_doc(patched_buffer, audit, mistral_api_url, headers):
+    print(f"[DEBUG] Transferring {len(stage1_observation_store)} Stage-1 Observations to Stage-2")
+    if stage1_observation_store:
+        attendance_text = ", ".join(audit.attendanceSheet)
+        scope_text = audit.scope
+        combined_entries = []
+        for obs in stage1_observation_store:
+            combined_entries.append(
+                f"Clause {obs.get('Cl. No', '')}\nObservation: {obs.get('summary', '')}"
+            )
+    else:
+        combined_entries = ["No observations from Stage 1."]
+
+    from docx import Document
+    patched_buffer.seek(0)
+    doc = Document(patched_buffer)
+    for table in doc.tables:
+        for row in table.rows:
+            for cell in row.cells:
+                if "Observations raised in Stage-1:" in cell.text:
+                    cell.text = "Observations raised in Stage-1:\n\n" + "\n\n".join(combined_entries)
+                    break
+            else:
+                continue
+            break
+        else:
+            continue
+        break
+    patched_buffer.seek(0)
+    patched_buffer.truncate(0)
+    doc.save(patched_buffer)
+    patched_buffer.seek(0)
+    return patched_buffer
 
 # ======================= ROUTES ===================================
 
@@ -4890,6 +5045,17 @@ async def submit_iso27001_stage1(audit : ISO27001Stage1Audit, forced_pattern_nam
                 else:
                     continue  # Retry
     # -----------------------------------------------------------------
+    minor_nc_for_stage2 = []
+    for summary in minor_nc_summaries:
+        m = re.match(r"Clause\s*([\d\.]+)\s*:\s*(.+)", summary)
+        if m:
+            minor_nc_for_stage2.append({"Cl. No": m.group(1), "summary": m.group(2)})
+    stage1_minor_nc_store.clear()  # Remove any existing from previous run
+    stage1_minor_nc_store.extend(minor_nc_for_stage2)  # Save new NCs for Stage 2
+    print("[DEBUG][Stage1] stage1_minor_nc_store after saving:", stage1_minor_nc_store)
+    print("[DEBUG][Stage1] stage1_minor_nc_store length:", len(stage1_minor_nc_store))
+
+    await asyncio.sleep(3)
 
     # ---- OBSERVATION Extraction, Summarization, and Table Patch (ISO 27001 Stage 1) -------
     obs_rows = extract_observation_rows_iso27001(updated_rows)
@@ -4919,6 +5085,18 @@ async def submit_iso27001_stage1(audit : ISO27001Stage1Audit, forced_pattern_nam
         if summary_text_obs:  # Only proceed if we got a response
             obs_summaries = clean_observation_summaries(summary_text_obs)
             patched_buffer = patch_observations_table(patched_buffer, obs_summaries)
+            # Save for Stage 2 transfer
+            obs_for_stage2 = []
+            for summary in obs_summaries:
+                m = re.match(r"(?:Clause\s*)?([\d\.]+)\s*[:\-–]?\s*(.+)", summary, re.I)
+                if m:
+                    obs_for_stage2.append({"Cl. No": m.group(1), "summary": m.group(2)})
+                else:
+                    # Keep even if parsing fails
+                    obs_for_stage2.append({"Cl. No": "", "summary": summary})
+            stage1_observation_store.clear()
+            stage1_observation_store.extend(obs_for_stage2)
+            print("[DEBUG][Stage1] stage1_observation_store after saving:", stage1_observation_store)
     # --------------------------------------------------------------------------------------
 
     final_doc_bytes = patched_buffer.getvalue()
@@ -5067,7 +5245,15 @@ async def submit_iso27001_stage2(audit: ISO27001Stage2Audit, forced_pattern_name
     # print("Updated rows: ",updated_rows)
     patched_buffer = patch_docx_by_row_index_stage2_iso27001(extract_buffer, updated_rows)
 
-    # ---- ISO 27001 Stage-1 MINOR NC Extraction, Summarization, and Table Patch -------
+    patched_buffer = await transfer_stage1_ncs_to_stage2_doc(
+        patched_buffer, audit, mistral_api_url, headers
+    )
+
+    patched_buffer = await transfer_stage1_observations_to_stage2_doc(
+        patched_buffer, audit, mistral_api_url, headers
+    )
+
+    # ---- ISO 27001 Stage-2 MINOR NC Extraction, Summarization, and Table Patch -------
     minor_nc_rows = extract_minor_nc_rows_iso27001(updated_rows)
     minor_nc_summaries = []
     MAX_RETRIES = 3  # Robust retry logic for LLM query
