@@ -4907,31 +4907,48 @@ Ensure each clause's answer is separated by one line (\\n\\n) for clarity.
 
 
 def ensure_list_of_dicts(text: str) -> list[dict]:
-    """
-    Attempt to extract a JSON list of dictionaries from the input text.
-    Cleans up common LLM artifacts like code fences, markdown, and invalid characters.
-    """
+    import json
+    import re
 
-    # Step 1: Remove markdown-style code fences like ```json ... ```
     cleaned_text = text.strip()
-    cleaned_text = re.sub(r"^```(?:json)?\s*|```$", "", cleaned_text, flags=re.MULTILINE).strip()
 
-    # Step 2: Extract JSON array from within larger text (if exists)
-    json_array_match = re.search(r"(\[.*?\])", cleaned_text, re.DOTALL)
-    if json_array_match:
-        cleaned_text = json_array_match.group(1)
+    # Remove markdown fences
+    cleaned_text = re.sub(
+        r"^```(?:json)?\s*|```$",
+        "",
+        cleaned_text,
+        flags=re.MULTILINE
+    ).strip()
 
-    # Step 3: Remove dangerous control characters (nulls, tabs, etc)
-    cleaned_text = re.sub(r"[\x00-\x1F\x7F]", "", cleaned_text)
-
-    # Step 4: Try to parse JSON
+    # FIRST: try direct parse
     try:
         data = json.loads(cleaned_text)
-    except json.JSONDecodeError as e:
-        raise ValueError(f"❌ Failed to parse JSON from Mistral response: {e}\nResponse text was:\n{cleaned_text[:500]}")
 
-    # Step 5: Validate structure
-    if not isinstance(data, list) or not all(isinstance(item, dict) for item in data):
+    except json.JSONDecodeError as e:
+
+        print("⚠️ Direct JSON parse failed")
+        print("ERROR:", e)
+
+        # Fallback 1: extract full outer array
+        start = cleaned_text.find("[")
+        end = cleaned_text.rfind("]")
+
+        if start != -1 and end != -1 and end > start:
+            cleaned_text = cleaned_text[start:end + 1]
+
+        # Fallback 2: model returned objects without array
+        elif cleaned_text.startswith("{"):
+            cleaned_text = "[" + cleaned_text + "]"
+
+        print("⚠️ RETRYING PARSE")
+        print(cleaned_text[:1000])
+
+        data = json.loads(cleaned_text)
+
+    if not isinstance(data, list):
+        raise ValueError("❌ Parsed content is not a list")
+
+    if not all(isinstance(item, dict) for item in data):
         raise ValueError("❌ Parsed content is not a list of dictionaries")
 
     return data
